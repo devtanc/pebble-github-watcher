@@ -1,6 +1,7 @@
 # Pebble build output
 build/
 .pebble-cache/
+.lock-waf*
 
 # Pebble tool
 *.pbw

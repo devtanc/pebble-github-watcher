@@ -7,6 +7,10 @@ var protocol = require('./brain/protocol');
 
 Pebble.addEventListener('ready', function () {
   console.log('pkjs ready');
+  // Push the board proactively rather than waiting for the watch to ask. The
+  // watch->phone request path is unreliable on the emulator (QemuInboundPacket
+  // footer decode), and this also removes a startup race.
+  sendFakeBoard();
 });
 
 Pebble.addEventListener('appmessage', function (e) {
@@ -29,7 +33,10 @@ function sendFakeBoard() {
 // AppMessage allows only one outbound transfer at a time, so chain the sends:
 // fire the next only after the previous is acknowledged.
 function sendSequential(items, i) {
-  if (i >= items.length) return;
+  if (i >= items.length) {
+    console.log('board sent: ' + items.length + ' items');
+    return;
+  }
   Pebble.sendAppMessage(
     codec.encodeBoardItem(items[i]),
     function () { sendSequential(items, i + 1); },
