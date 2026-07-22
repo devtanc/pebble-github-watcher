@@ -1,0 +1,9 @@
+# Pebble build output
+build/
+.pebble-cache/
+
+# Pebble tool
+*.pbw
+
+# OS / editor cruft
+.DS_Store
