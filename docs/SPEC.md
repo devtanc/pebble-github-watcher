@@ -230,15 +230,16 @@ src/pkjs/
   config.js           # build constants (device-flow client_id — public)
   brain/
     auth.js           github-client.js  rate-governor.js  qr-encoder.js
-    timeline-planner.js  codec.js  config-store.js
-  __tests__/          # Jest specs (written first)
-test/c/               # Unity harness + mock pebble.h for lib/ modules
+    timeline-planner.js  codec.js  protocol.js  config-store.js
+test/js/              # Jest specs (written first) — OUTSIDE src/pkjs so the
+                      #   pkjs bundler (src/pkjs/**/*.js) never ships test code
+test/c/               # Unity harness (vendored) for pure lib/ modules; run.sh
 docs/SPEC.md
 ```
 
 ## 8. TDD plan (write tests first)
 
-**JavaScript (Jest, `src/pkjs/__tests__`)** — the bulk of the coverage:
+**JavaScript (Jest, `test/js/`)** — the bulk of the coverage:
 - `auth`: device-code request; poll loop (fake timers) across `authorization_pending`/`slow_down`/
   success/`expired_token`; token persistence; expiry → silent refresh; refresh-failure → re-auth
   signal; PAT-present short-circuits the device flow.

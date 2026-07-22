@@ -5,6 +5,18 @@
   "keywords": ["pebble-app"],
   "private": true,
   "dependencies": {},
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "test:c": "bash test/c/run.sh",
+    "test:all": "npm test && npm run test:c"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": ["<rootDir>/test/js"]
+  },
   "pebble": {
     "displayName": "GitHub Watcher",
     "uuid": "80918b9e-a444-40c7-8b60-fed47e97b7cf",
@@ -20,7 +32,12 @@
       "watchface": false
     },
     "messageKeys": [
-      "dummy"
+      "MsgType",
+      "Idx",
+      "Count",
+      "Label",
+      "Status",
+      "AgeS"
     ],
     "resources": {
       "media": []

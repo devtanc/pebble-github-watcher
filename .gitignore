@@ -10,3 +10,7 @@ build/
 
 # Claude Code local settings (personal, per-machine)
 .claude/settings.local.json
+
+# Node / test tooling
+node_modules/
+test/c/.build/
