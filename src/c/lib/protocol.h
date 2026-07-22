@@ -9,6 +9,7 @@
 #define MSG_TYPE_SHOW_DEVICE_CODE 2
 #define MSG_TYPE_AUTH_OK          3
 #define MSG_TYPE_AUTH_ERROR       4
+#define MSG_TYPE_STATUS           5
 
 typedef enum {
   STATUS_UNKNOWN = 0,

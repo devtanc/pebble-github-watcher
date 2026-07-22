@@ -1,5 +1,7 @@
-// Phone-side entry point. Milestone 3: authenticate, then fetch real GitHub
-// Actions status for the configured targets and push it to the watch.
+// Phone-side entry point. Milestone 5: Clay config page drives everything —
+// watched repos, auth, options — with no hardcoded config.
+var Clay = require('@rebble/clay');
+var clayConfig = require('./config-page');
 var codec = require('./brain/codec');
 var config = require('./config');
 var http = require('./brain/http');
@@ -16,27 +18,38 @@ var auth = createAuth({
   storage: localStorage,
   now: nowMs,
   sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
-  clientId: config.GITHUB_CLIENT_ID,
+  clientId: configStore.getClientIdOverride() || config.GITHUB_CLIENT_ID,
   getPat: function () { return configStore.getPat(); },
 });
 
 var github = createGithubClient({ httpGetJson: http.httpGetJson, now: nowMs });
+
+// Manual event handling so config stays phone-side (not pushed to the watch).
+var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
+
+Pebble.addEventListener('showConfiguration', function () {
+  Pebble.openURL(clay.generateUrl());
+});
+
+Pebble.addEventListener('webviewclosed', function (e) {
+  if (!e || !e.response) return;
+  clay.getSettings(e.response); // persists to localStorage['clay-settings']
+  loadBoard();
+});
 
 Pebble.addEventListener('ready', function () {
   console.log('pkjs ready');
   loadBoard();
 });
 
-// Kept for a future manual refresh from the watch.
-Pebble.addEventListener('appmessage', function (e) {
-  var msg = codec.decode(e.payload);
-  console.log('rx: ' + msg.type);
-  if (msg.type === 'REQUEST_BOARD') loadBoard();
-});
-
 function loadBoard() {
+  var targets = configStore.getTargets();
+  if (targets.length === 0) {
+    send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'));
+    return;
+  }
   auth.getAccessToken().then(function (token) {
-    return github.fetchBoard(token, configStore.getTargets());
+    return github.fetchBoard(token, targets);
   }).then(function (items) {
     console.log('board: ' + items.length + ' targets');
     sendBoard(items);
@@ -46,6 +59,7 @@ function loadBoard() {
       beginSignIn();
     } else {
       console.log('board error: ' + (err && (err.message || err)));
+      send(codec.encodeStatus('Couldn\'t load.\nCheck settings.'));
     }
   });
 }

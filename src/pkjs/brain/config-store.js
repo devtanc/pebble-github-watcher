@@ -1,46 +1,76 @@
-// Reads user configuration (watched targets, PAT) from storage. Clay writes
-// these keys; until the config page exists, DEFAULT_TARGETS is used.
+// Reads user configuration from the Clay settings blob (localStorage
+// 'clay-settings', a flat { messageKey: value } object). No hardcoded config:
+// when nothing is set, getTargets() returns [] and the watch shows an empty
+// state. Storage is injected for testing.
 'use strict';
 
-// PLACEHOLDER(clay): temporary hardcoded target. MUST be removed when the Clay
-// config page lands (SPEC §11) — this becomes [] and the watch shows a
-// "configure repos in the phone app" empty state. Watched targets then come
-// solely from Clay via the gh_targets key.
-var DEFAULT_TARGETS = [
-  { owner: 'devtanc', repo: 'dynamo-helper', branch: 'master' },
-];
+function parseOne(token) {
+  // "owner/repo" or "owner/repo:branch"
+  var branch;
+  var repoPart = token;
+  var colon = token.indexOf(':');
+  if (colon !== -1) {
+    repoPart = token.slice(0, colon);
+    branch = token.slice(colon + 1).trim() || undefined;
+  }
+  var slash = repoPart.indexOf('/');
+  if (slash <= 0 || slash >= repoPart.length - 1) return null;
+  var owner = repoPart.slice(0, slash).trim();
+  var repo = repoPart.slice(slash + 1).trim();
+  if (!owner || !repo) return null;
+  return { owner: owner, repo: repo, branch: branch };
+}
+
+function parseRepos(text) {
+  if (!text) return [];
+  return String(text)
+    .split(/[\n,]+/)
+    .map(function (s) { return s.trim(); })
+    .filter(Boolean)
+    .map(parseOne)
+    .filter(Boolean);
+}
 
 function createConfigStore(deps) {
   var storage = deps.storage;
-  var defaults = deps.defaults || DEFAULT_TARGETS;
+
+  function settings() {
+    var raw = storage.getItem('clay-settings');
+    if (!raw) return {};
+    try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
+  }
 
   function getTargets() {
-    var raw = storage.getItem('gh_targets');
-    if (!raw) return defaults;
-    var parsed;
-    try { parsed = JSON.parse(raw); } catch (e) { return defaults; }
-    if (!Array.isArray(parsed) || parsed.length === 0) return defaults;
-    return parsed
-      .filter(function (t) { return t && t.owner && t.repo; })
-      .map(function (t) {
-        return {
-          owner: String(t.owner),
-          repo: String(t.repo),
-          branch: t.branch ? String(t.branch) : undefined,
-          workflow: t.workflow ? String(t.workflow) : undefined,
-        };
-      });
+    return parseRepos(settings().repos);
   }
 
   function getPat() {
-    return storage.getItem('gh_pat');
+    var pat = settings().pat;
+    return (pat && String(pat).trim()) || null;
   }
 
-  function setTargets(targets) {
-    storage.setItem('gh_targets', JSON.stringify(targets));
+  function getClientIdOverride() {
+    var id = settings().clientId;
+    return (id && String(id).trim()) || null;
   }
 
-  return { getTargets: getTargets, getPat: getPat, setTargets: setTargets };
+  function getPollMinutes() {
+    var m = Number(settings().pollMinutes);
+    return m && m > 0 ? m : 15;
+  }
+
+  function getUseTimeline() {
+    var v = settings().useTimeline;
+    return v === undefined ? true : !!v;
+  }
+
+  return {
+    getTargets: getTargets,
+    getPat: getPat,
+    getClientIdOverride: getClientIdOverride,
+    getPollMinutes: getPollMinutes,
+    getUseTimeline: getUseTimeline,
+  };
 }
 
-module.exports = { createConfigStore: createConfigStore, DEFAULT_TARGETS: DEFAULT_TARGETS };
+module.exports = { createConfigStore: createConfigStore, parseRepos: parseRepos };

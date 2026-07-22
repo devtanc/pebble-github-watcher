@@ -34,6 +34,10 @@ function encodeAuthError(message) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.AUTH_ERROR, [KEY.MSG]: message };
 }
 
+function encodeStatus(message) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.STATUS, [KEY.MSG]: message };
+}
+
 // Decode an incoming payload (from either side) into a logical message.
 // Unknown types are surfaced rather than thrown, so a version skew degrades
 // gracefully instead of crashing the handler.
@@ -60,6 +64,8 @@ function decode(payload) {
       return { type: 'AUTH_OK' };
     case MSG_TYPE.AUTH_ERROR:
       return { type: 'AUTH_ERROR', msg: payload[KEY.MSG] };
+    case MSG_TYPE.STATUS:
+      return { type: 'STATUS', msg: payload[KEY.MSG] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
@@ -71,5 +77,6 @@ module.exports = {
   encodeShowDeviceCode,
   encodeAuthOk,
   encodeAuthError,
+  encodeStatus,
   decode,
 };

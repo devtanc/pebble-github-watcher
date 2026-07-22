@@ -9,6 +9,7 @@ const MSG_TYPE = {
   SHOW_DEVICE_CODE: 2,  // phone -> watch: display this device-flow code
   AUTH_OK: 3,           // phone -> watch: signed in, proceed
   AUTH_ERROR: 4,        // phone -> watch: sign-in failed (carries a message)
+  STATUS: 5,            // phone -> watch: board status text (empty / error state)
 };
 
 // Build status for a board row.

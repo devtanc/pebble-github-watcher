@@ -45,4 +45,8 @@ describe('codec', () => {
     expect(codec.decode(codec.encodeAuthOk())).toEqual({ type: 'AUTH_OK' });
     expect(codec.decode(codec.encodeAuthError('denied'))).toEqual({ type: 'AUTH_ERROR', msg: 'denied' });
   });
+
+  test('status round-trips', () => {
+    expect(codec.decode(codec.encodeStatus('No repos'))).toEqual({ type: 'STATUS', msg: 'No repos' });
+  });
 });

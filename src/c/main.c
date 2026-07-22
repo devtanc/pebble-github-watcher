@@ -16,6 +16,7 @@ static MenuLayer *s_menu_layer;
 static TextLayer *s_empty_layer;
 static BoardItem s_items[MAX_ITEMS];
 static uint8_t s_count = 0;
+static char s_status_text[96] = "Loading…";
 
 // Sign-in window
 static Window *s_signin_window = NULL;
@@ -112,6 +113,17 @@ static void handle_show_device_code(DictionaryIterator *iter) {
   show_signin();
 }
 
+static void handle_status(DictionaryIterator *iter) {
+  Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
+  if (msg_t) {
+    snprintf(s_status_text, sizeof(s_status_text), "%s", msg_t->value->cstring);
+    text_layer_set_text(s_empty_layer, s_status_text);
+  }
+  s_count = 0;
+  layer_set_hidden(text_layer_get_layer(s_empty_layer), false);
+  menu_layer_reload_data(s_menu_layer);
+}
+
 static void handle_auth_error(DictionaryIterator *iter) {
   Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
   const char *msg = msg_t ? msg_t->value->cstring : "sign-in failed";
@@ -129,6 +141,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     case MSG_TYPE_SHOW_DEVICE_CODE: handle_show_device_code(iter); break;
     case MSG_TYPE_AUTH_OK:          hide_signin(); break;
     case MSG_TYPE_AUTH_ERROR:       handle_auth_error(iter); break;
+    case MSG_TYPE_STATUS:           handle_status(iter); break;
     default: break;
   }
 }
@@ -163,9 +176,10 @@ static void main_window_load(Window *window) {
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
 
-  s_empty_layer = text_layer_create(GRect(0, bounds.size.h / 2 - 10, bounds.size.w, 20));
-  text_layer_set_text(s_empty_layer, "Loading…");
+  s_empty_layer = text_layer_create(GRect(4, bounds.size.h / 2 - 32, bounds.size.w - 8, 64));
+  text_layer_set_text(s_empty_layer, s_status_text);
   text_layer_set_text_alignment(s_empty_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_empty_layer, GTextOverflowModeWordWrap);
   layer_add_child(root, text_layer_get_layer(s_empty_layer));
 }
 

@@ -2,9 +2,13 @@
   "name": "pebble-github-watcher",
   "author": "Tanner",
   "version": "1.0.0",
-  "keywords": ["pebble-app"],
+  "keywords": [
+    "pebble-app"
+  ],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "@rebble/clay": "^1.0.10"
+  },
   "devDependencies": {
     "jest": "^29.7.0"
   },
@@ -15,7 +19,9 @@
   },
   "jest": {
     "testEnvironment": "node",
-    "roots": ["<rootDir>/test/js"]
+    "roots": [
+      "<rootDir>/test/js"
+    ]
   },
   "pebble": {
     "displayName": "GitHub Watcher",

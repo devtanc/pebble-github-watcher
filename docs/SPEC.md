@@ -269,9 +269,10 @@ docs/SPEC.md
    `brain/config-store.js`). Verified live.
 4. **Rate governor:** ETag conditional requests + adaptive backoff (`brain/rate-governor.js`), layered
    under the GitHub client. *(split out of the original M3.)*
-5. **Clay config page:** the phone settings UI — watched targets, poll interval, glance target,
-   timeline toggle, PAT, client-id override. **Removes every hardcoded placeholder in §11**; config
-   flows solely from Clay. *(prioritize to eliminate placeholders as early as possible.)*
+5. ✅ **Clay config page:** phone settings UI (`@rebble/clay` — the maintained fork) for watched
+   targets, PAT, client-id override, poll interval, timeline toggle. `config-store` reads Clay's
+   `clay-settings`; `DEFAULT_TARGETS` removed → empty-state UI. Verified via seeded Clay settings
+   (the tool's `emu-app-config` browser is broken on Python 3.10 — pebble-tool bug, not app code).
 6. **App Glance:** compute in JS, set from C on deinit; wakeup-refresh.
 7. **QR bridge:** encoder (JS) + unpack/draw (C), scan-verified on emulator (also reused by Sign-In).
 8. **Actions:** re-run + merge-when-green with confirmation.
@@ -285,8 +286,8 @@ of the dynamic value at the milestone noted — no hardcoded config may remain p
 
 | Value | File | Current placeholder | Dynamic source | Removed at |
 |-------|------|---------------------|----------------|-----------|
-| Watched targets | `src/pkjs/brain/config-store.js` (`DEFAULT_TARGETS`) | `[devtanc/dynamo-helper:master]` | Clay watched-targets → `gh_targets` | **M5**; `DEFAULT_TARGETS` → `[]` + empty-state UI |
-| Client-id override | `src/pkjs/config.js` + Clay | baked-in `GITHUB_CLIENT_ID` (public build constant) | Clay "advanced client id" override | **M5** — wire the override; the baked-in value legitimately *stays* as the default (not a hardcode to remove) |
+| ✅ Watched targets | `src/pkjs/brain/config-store.js` | ~~`[dynamo-helper:master]`~~ removed | Clay `repos` → `clay-settings` | **Done (M5)** — `DEFAULT_TARGETS` gone; empty-state UI added |
+| ✅ Client-id override | `src/pkjs/config.js` + Clay | baked-in `GITHUB_CLIENT_ID` (stays as default) | Clay `clientId` override | **Done (M5)** — override wired in `index.js`; baked-in value remains the default |
 | Poll interval | `index.js` (once polling is added, M4/M6) | to be a constant when introduced | Clay "poll interval" | **M5** |
 | Glance target | App Glance (M6) | first-failing / first target | Clay "glance target" | **M6** |
 | Timeline pins toggle | Timeline (M9) | default on | Clay "use timeline pins" | **M9** |
