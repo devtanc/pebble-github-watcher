@@ -12,6 +12,7 @@
 #define MSG_TYPE_STATUS           5
 #define MSG_TYPE_REQUEST_QR       6
 #define MSG_TYPE_QR_DATA          7
+#define MSG_TYPE_GLANCE           8
 
 typedef enum {
   STATUS_UNKNOWN = 0,

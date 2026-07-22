@@ -12,6 +12,7 @@ const MSG_TYPE = {
   STATUS: 5,            // phone -> watch: board status text (empty / error state)
   REQUEST_QR: 6,        // watch -> phone: "send me a QR for row Idx"
   QR_DATA: 7,           // phone -> watch: QR grid (Size + packed Data)
+  GLANCE: 8,            // phone -> watch: launcher subtitle text (Msg)
 };
 
 // Build status for a board row.

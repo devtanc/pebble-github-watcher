@@ -65,4 +65,8 @@ describe('codec', () => {
     expect(codec.decode(codec.encodeQrData({ size: 29, bytes: [1, 2, 3] })))
       .toEqual({ type: 'QR_DATA', size: 29, data: [1, 2, 3] });
   });
+
+  test('glance round-trips', () => {
+    expect(codec.decode(codec.encodeGlance('All 2 green'))).toEqual({ type: 'GLANCE', msg: 'All 2 green' });
+  });
 });

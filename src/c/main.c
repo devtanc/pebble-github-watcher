@@ -5,6 +5,7 @@
 #include "lib/qr_unpack.h"
 
 #define MAX_ITEMS 16
+#define PERSIST_KEY_GLANCE 1
 
 typedef struct {
   char label[32];
@@ -213,6 +214,15 @@ static void handle_auth_error(DictionaryIterator *iter) {
   show_signin();
 }
 
+static void handle_glance(DictionaryIterator *iter) {
+  // Persist the launcher subtitle; it is applied on deinit (glance can only be
+  // written by the foreground app, so we set it as the app closes).
+  Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
+  if (msg_t) {
+    persist_write_string(PERSIST_KEY_GLANCE, msg_t->value->cstring);
+  }
+}
+
 static void handle_qr_data(DictionaryIterator *iter) {
   Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
   Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
@@ -240,6 +250,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     case MSG_TYPE_AUTH_ERROR:       handle_auth_error(iter); break;
     case MSG_TYPE_STATUS:           handle_status(iter); break;
     case MSG_TYPE_QR_DATA:          handle_qr_data(iter); break;
+    case MSG_TYPE_GLANCE:           handle_glance(iter); break;
     default: break;
   }
 }
@@ -318,7 +329,24 @@ static void init(void) {
   window_stack_push(s_main_window, true);
 }
 
+static void glance_reload(AppGlanceReloadSession *session, size_t limit, void *context) {
+  if (limit < 1 || !persist_exists(PERSIST_KEY_GLANCE)) {
+    return;
+  }
+  char subtitle[64];
+  persist_read_string(PERSIST_KEY_GLANCE, subtitle, sizeof(subtitle));
+  const AppGlanceSlice slice = {
+    .layout = {
+      .icon = APP_GLANCE_SLICE_DEFAULT_ICON,
+      .subtitle_template_string = subtitle,
+    },
+    .expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION,
+  };
+  app_glance_add_slice(session, slice);
+}
+
 static void deinit(void) {
+  app_glance_reload(glance_reload, NULL);
   if (s_qr_window) {
     window_destroy(s_qr_window);
   }

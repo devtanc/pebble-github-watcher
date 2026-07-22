@@ -9,6 +9,7 @@ var createAuth = require('./brain/auth').createAuth;
 var createGithubClient = require('./brain/github-client').createGithubClient;
 var createConfigStore = require('./brain/config-store').createConfigStore;
 var qrEncoder = require('./brain/qr-encoder');
+var glance = require('./brain/glance');
 
 function nowMs() { return Date.now(); }
 
@@ -63,7 +64,8 @@ function sendQr(idx) {
 function loadBoard() {
   var targets = configStore.getTargets();
   if (targets.length === 0) {
-    send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'));
+    send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'),
+      function () { send(codec.encodeGlance(glance.summarize([]))); });
     return;
   }
   auth.getAccessToken().then(function (token) {
@@ -102,6 +104,7 @@ function sendBoard(items) {
   function next(i) {
     if (i >= count) {
       console.log('board sent: ' + count + ' items');
+      send(codec.encodeGlance(glance.summarize(items)));
       return;
     }
     var it = items[i];

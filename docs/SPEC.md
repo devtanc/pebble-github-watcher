@@ -273,7 +273,9 @@ docs/SPEC.md
    targets, PAT, client-id override, poll interval, timeline toggle. `config-store` reads Clay's
    `clay-settings`; `DEFAULT_TARGETS` removed → empty-state UI. Verified via seeded Clay settings
    (the tool's `emu-app-config` browser is broken on Python 3.10 — pebble-tool bug, not app code).
-6. **App Glance:** compute in JS, set from C on deinit; wakeup-refresh.
+6. ✅ **App Glance:** `glance.js` summarizes the board (failing-first); C persists the text and writes
+   it via `app_glance_reload` on deinit. Verified — launcher shows "Green". *Follow-up: wakeup-refresh
+   for freshness between opens.*
 7. ✅ **QR bridge:** `qr-encoder.js` (URL→packed bits) + `qr_unpack.c` (bits→grid), wire format
    cross-verified by a shared fixture. SELECT on a board row → `REQUEST_QR` → `QR_DATA` → C draws the
    grid with a quiet zone. Verified live (real run URL rendered, driven via `emu-button`). Finding:
@@ -293,7 +295,7 @@ of the dynamic value at the milestone noted — no hardcoded config may remain p
 | ✅ Watched targets | `src/pkjs/brain/config-store.js` | ~~`[dynamo-helper:master]`~~ removed | Clay `repos` → `clay-settings` | **Done (M5)** — `DEFAULT_TARGETS` gone; empty-state UI added |
 | ✅ Client-id override | `src/pkjs/config.js` + Clay | baked-in `GITHUB_CLIENT_ID` (stays as default) | Clay `clientId` override | **Done (M5)** — override wired in `index.js`; baked-in value remains the default |
 | Poll interval | `index.js` (once polling is added, M4/M6) | to be a constant when introduced | Clay "poll interval" | **M5** |
-| Glance target | App Glance (M6) | first-failing / first target | Clay "glance target" | **M6** |
+| ✅ Glance target | `glance.js` | ~~needed~~ n/a | auto-summary (failing-first) | **Resolved (M6)** — summarizes all repos; no per-repo Clay field needed |
 | Timeline pins toggle | Timeline (M9) | default on | Clay "use timeline pins" | **M9** |
 
 ## 10. Decisions (resolved)
