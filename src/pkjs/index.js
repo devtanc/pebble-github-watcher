@@ -1,41 +1,51 @@
-// Phone-side entry point. Milestone 2: authenticate via GitHub OAuth device
-// flow, then push the board (still fake data until Milestone 3).
+// Phone-side entry point. Milestone 3: authenticate, then fetch real GitHub
+// Actions status for the configured targets and push it to the watch.
 var codec = require('./brain/codec');
 var config = require('./config');
 var http = require('./brain/http');
 var createAuth = require('./brain/auth').createAuth;
+var createGithubClient = require('./brain/github-client').createGithubClient;
+var createConfigStore = require('./brain/config-store').createConfigStore;
+
+function nowMs() { return Date.now(); }
+
+var configStore = createConfigStore({ storage: localStorage });
 
 var auth = createAuth({
   httpPostForm: http.httpPostForm,
   storage: localStorage,
-  now: function () { return Date.now(); },
+  now: nowMs,
   sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
   clientId: config.GITHUB_CLIENT_ID,
-  getPat: function () { return localStorage.getItem('gh_pat'); },
+  getPat: function () { return configStore.getPat(); },
 });
+
+var github = createGithubClient({ httpGetJson: http.httpGetJson, now: nowMs });
 
 Pebble.addEventListener('ready', function () {
   console.log('pkjs ready');
-  start();
+  loadBoard();
 });
 
-// Kept for a future manual refresh from the watch; unused while we push on ready.
+// Kept for a future manual refresh from the watch.
 Pebble.addEventListener('appmessage', function (e) {
   var msg = codec.decode(e.payload);
   console.log('rx: ' + msg.type);
   if (msg.type === 'REQUEST_BOARD') loadBoard();
 });
 
-function start() {
-  auth.getAccessToken().then(function () {
-    console.log('authed');
-    loadBoard();
+function loadBoard() {
+  auth.getAccessToken().then(function (token) {
+    return github.fetchBoard(token, configStore.getTargets());
+  }).then(function (items) {
+    console.log('board: ' + items.length + ' targets');
+    sendBoard(items);
   }).catch(function (err) {
     if (err && err.code === 'auth_required') {
+      auth.signOut();
       beginSignIn();
     } else {
-      console.log('auth error: ' + (err && err.message));
-      send(codec.encodeAuthError((err && err.message) || 'auth failed'));
+      console.log('board error: ' + (err && (err.message || err)));
     }
   });
 }
@@ -54,27 +64,19 @@ function beginSignIn() {
   });
 }
 
-function loadBoard() {
-  // Milestone 2 still serves fake data; real GitHub fetch is Milestone 3.
-  sendFakeBoard();
-}
-
-function sendFakeBoard() {
-  var STATUS = require('./brain/protocol').STATUS;
-  var items = [
-    { idx: 0, count: 3, label: 'api:main',  status: STATUS.SUCCESS,     ageS: 45 },
-    { idx: 1, count: 3, label: 'web:main',  status: STATUS.FAILURE,     ageS: 600 },
-    { idx: 2, count: 3, label: 'infra:dev', status: STATUS.IN_PROGRESS, ageS: 12 },
-  ];
-  sendSequential(items, 0);
-}
-
-function sendSequential(items, i) {
-  if (i >= items.length) {
-    console.log('board sent: ' + items.length + ' items');
-    return;
+function sendBoard(items) {
+  var count = items.length;
+  function next(i) {
+    if (i >= count) {
+      console.log('board sent: ' + count + ' items');
+      return;
+    }
+    var it = items[i];
+    send(codec.encodeBoardItem({
+      idx: i, count: count, label: it.label, status: it.status, ageS: it.ageS,
+    }), function () { next(i + 1); });
   }
-  send(codec.encodeBoardItem(items[i]), function () { sendSequential(items, i + 1); });
+  next(0);
 }
 
 function send(dict, onOk) {

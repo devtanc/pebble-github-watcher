@@ -25,4 +25,28 @@ function httpPostForm(url, params) {
   });
 }
 
-module.exports = { httpPostForm };
+// GET and resolve { status, body, getHeader }, where body is parsed JSON (or {}).
+// getHeader(name) exposes response headers (ETag, rate-limit) for later use.
+// Never rejects — network failure resolves as { status: 0, body: {} }.
+function httpGetJson(url, headers) {
+  return new Promise(function (resolve) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    if (headers) {
+      Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
+    }
+    xhr.onload = function () {
+      var body = {};
+      try { body = JSON.parse(xhr.responseText); } catch (e) { body = {}; }
+      resolve({
+        status: xhr.status,
+        body: body,
+        getHeader: function (name) { return xhr.getResponseHeader(name); },
+      });
+    };
+    xhr.onerror = function () { resolve({ status: 0, body: {} }); };
+    xhr.send();
+  });
+}
+
+module.exports = { httpPostForm, httpGetJson };

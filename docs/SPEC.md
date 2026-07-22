@@ -262,15 +262,34 @@ docs/SPEC.md
 
 ## 9. Milestones
 
-1. **Skeleton + protocol:** codec (JS+C) with tests; board request/response round-trip showing static
-   fake data on the emulator. *(proves the transport)*
-2. **Auth:** device flow + refresh (`brain/auth.js`) with tests; Sign-In screen showing the user code
-   as **text** (QR retrofitted at M5); PAT fallback via Clay. *(nothing fetches real data without this)*
-3. **GitHub client + rate governor:** real board data; ETag/backoff tested. Clay config for targets.
-4. **App Glance:** compute in JS, set from C on deinit; wakeup-refresh.
-5. **QR bridge:** encoder (JS) + unpack/draw (C), scan-verified on emulator (also reused by Sign-In).
-6. **Actions:** re-run + merge-when-green with confirmation.
-7. **Timeline pins:** estimation + rebble timeline PUT, behind the default-on config flag.
+1. ✅ **Skeleton + protocol:** codec (JS+C) with tests; board round-trip on the emulator.
+2. ✅ **Auth:** device flow + refresh (`brain/auth.js`); Sign-In screen (code as text, QR retrofit at
+   the QR milestone); PAT fallback. Verified live against real GitHub.
+3. ✅ **GitHub client:** real Actions status on the board (`brain/github-client.js`,
+   `brain/config-store.js`). Verified live.
+4. **Rate governor:** ETag conditional requests + adaptive backoff (`brain/rate-governor.js`), layered
+   under the GitHub client. *(split out of the original M3.)*
+5. **Clay config page:** the phone settings UI — watched targets, poll interval, glance target,
+   timeline toggle, PAT, client-id override. **Removes every hardcoded placeholder in §11**; config
+   flows solely from Clay. *(prioritize to eliminate placeholders as early as possible.)*
+6. **App Glance:** compute in JS, set from C on deinit; wakeup-refresh.
+7. **QR bridge:** encoder (JS) + unpack/draw (C), scan-verified on emulator (also reused by Sign-In).
+8. **Actions:** re-run + merge-when-green with confirmation.
+9. **Timeline pins:** estimation + rebble timeline PUT, behind the default-on config flag.
+
+## 9a. Placeholders to remove (Clay migration)
+
+Discipline: **any value that Clay will eventually own must be added here the moment it is introduced,
+and marked in code with a `// PLACEHOLDER(clay): ...` comment.** Each must be *fully removed* in favor
+of the dynamic value at the milestone noted — no hardcoded config may remain past Milestone 5.
+
+| Value | File | Current placeholder | Dynamic source | Removed at |
+|-------|------|---------------------|----------------|-----------|
+| Watched targets | `src/pkjs/brain/config-store.js` (`DEFAULT_TARGETS`) | `[devtanc/dynamo-helper:master]` | Clay watched-targets → `gh_targets` | **M5**; `DEFAULT_TARGETS` → `[]` + empty-state UI |
+| Client-id override | `src/pkjs/config.js` + Clay | baked-in `GITHUB_CLIENT_ID` (public build constant) | Clay "advanced client id" override | **M5** — wire the override; the baked-in value legitimately *stays* as the default (not a hardcode to remove) |
+| Poll interval | `index.js` (once polling is added, M4/M6) | to be a constant when introduced | Clay "poll interval" | **M5** |
+| Glance target | App Glance (M6) | first-failing / first target | Clay "glance target" | **M6** |
+| Timeline pins toggle | Timeline (M9) | default on | Clay "use timeline pins" | **M9** |
 
 ## 10. Decisions (resolved)
 
