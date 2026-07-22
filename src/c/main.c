@@ -22,11 +22,13 @@ static char s_status_text[96] = "Loading…";
 
 // Sign-in window
 static Window *s_signin_window = NULL;
-static TextLayer *s_signin_title;
 static TextLayer *s_signin_code;
 static TextLayer *s_signin_instr;
+static Layer *s_signin_qr_layer;
+static uint8_t s_signin_qr_bytes[256];
+static int s_signin_qr_size = 0;
 static char s_user_code[16] = "";
-static char s_instr_text[64] = "Enter at\ngithub.com/login/device";
+static char s_instr_text[64] = "github.com/login/device";
 
 // QR window
 static Window *s_qr_window = NULL;
@@ -34,32 +36,61 @@ static Layer *s_qr_layer;
 static uint8_t s_qr_bytes[512];
 static int s_qr_size = 0;
 
+// ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
+
+static void draw_qr(GContext *ctx, GRect area, const uint8_t *bytes, int size) {
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, area, 0, GCornerNone);
+  if (size <= 0) {
+    return;
+  }
+  const int quiet = 4; // quiet-zone modules per side (needed for scanning)
+  int total = size + quiet * 2;
+  int mindim = area.size.w < area.size.h ? area.size.w : area.size.h;
+  int scale = mindim / total;
+  if (scale < 1) scale = 1;
+  int dim = scale * size;
+  int ox = area.origin.x + (area.size.w - dim) / 2;
+  int oy = area.origin.y + (area.size.h - dim) / 2;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  for (int r = 0; r < size; r++) {
+    for (int c = 0; c < size; c++) {
+      if (qr_module_at(bytes, size, r, c)) {
+        graphics_fill_rect(ctx, GRect(ox + c * scale, oy + r * scale, scale, scale), 0, GCornerNone);
+      }
+    }
+  }
+}
+
 // ---- Sign-in window ---------------------------------------------------------
+
+static void signin_qr_update_proc(Layer *layer, GContext *ctx) {
+  draw_qr(ctx, layer_get_bounds(layer), s_signin_qr_bytes, s_signin_qr_size);
+}
 
 static void signin_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect b = layer_get_bounds(root);
 
-  s_signin_title = text_layer_create(GRect(0, 6, b.size.w, 22));
-  text_layer_set_text(s_signin_title, "Sign in to GitHub");
-  text_layer_set_text_alignment(s_signin_title, GTextAlignmentCenter);
-  layer_add_child(root, text_layer_get_layer(s_signin_title));
-
-  s_signin_code = text_layer_create(GRect(0, b.size.h / 2 - 22, b.size.w, 32));
+  s_signin_code = text_layer_create(GRect(0, 0, b.size.w, 30));
   text_layer_set_font(s_signin_code, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
   text_layer_set_text_alignment(s_signin_code, GTextAlignmentCenter);
   text_layer_set_text(s_signin_code, s_user_code);
   layer_add_child(root, text_layer_get_layer(s_signin_code));
 
-  s_signin_instr = text_layer_create(GRect(4, b.size.h - 50, b.size.w - 8, 46));
+  s_signin_qr_layer = layer_create(GRect(0, 30, b.size.w, b.size.h - 50));
+  layer_set_update_proc(s_signin_qr_layer, signin_qr_update_proc);
+  layer_add_child(root, s_signin_qr_layer);
+
+  s_signin_instr = text_layer_create(GRect(0, b.size.h - 20, b.size.w, 20));
   text_layer_set_text_alignment(s_signin_instr, GTextAlignmentCenter);
   text_layer_set_text(s_signin_instr, s_instr_text);
   layer_add_child(root, text_layer_get_layer(s_signin_instr));
 }
 
 static void signin_unload(Window *window) {
-  text_layer_destroy(s_signin_title);
   text_layer_destroy(s_signin_code);
+  layer_destroy(s_signin_qr_layer);
   text_layer_destroy(s_signin_instr);
 }
 
@@ -74,9 +105,10 @@ static void show_signin(void) {
   if (window_stack_get_top_window() != s_signin_window) {
     window_stack_push(s_signin_window, true);
   } else {
-    // Already visible — just refresh the on-screen text.
+    // Already visible — just refresh the on-screen content.
     text_layer_set_text(s_signin_code, s_user_code);
     text_layer_set_text(s_signin_instr, s_instr_text);
+    layer_mark_dirty(s_signin_qr_layer);
   }
 }
 
@@ -89,28 +121,7 @@ static void hide_signin(void) {
 // ---- QR window --------------------------------------------------------------
 
 static void qr_update_proc(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, b, 0, GCornerNone);
-  if (s_qr_size <= 0) {
-    return;
-  }
-  const int quiet = 4; // quiet-zone modules per side (needed for scanning)
-  int total = s_qr_size + quiet * 2;
-  int mindim = b.size.w < b.size.h ? b.size.w : b.size.h;
-  int scale = mindim / total;
-  if (scale < 1) scale = 1;
-  int dim = scale * s_qr_size;
-  int ox = (b.size.w - dim) / 2;
-  int oy = (b.size.h - dim) / 2;
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  for (int r = 0; r < s_qr_size; r++) {
-    for (int c = 0; c < s_qr_size; c++) {
-      if (qr_module_at(s_qr_bytes, s_qr_size, r, c)) {
-        graphics_fill_rect(ctx, GRect(ox + c * scale, oy + r * scale, scale, scale), 0, GCornerNone);
-      }
-    }
-  }
+  draw_qr(ctx, layer_get_bounds(layer), s_qr_bytes, s_qr_size);
 }
 
 static void qr_window_load(Window *window) {
@@ -170,7 +181,17 @@ static void handle_show_device_code(DictionaryIterator *iter) {
   if (code_t) {
     snprintf(s_user_code, sizeof(s_user_code), "%s", code_t->value->cstring);
   }
-  snprintf(s_instr_text, sizeof(s_instr_text), "Enter at\ngithub.com/login/device");
+  Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
+  Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
+  if (size_tuple && data_tuple) {
+    uint16_t len = data_tuple->length;
+    if (len > sizeof(s_signin_qr_bytes)) {
+      len = sizeof(s_signin_qr_bytes);
+    }
+    memcpy(s_signin_qr_bytes, data_tuple->value->data, len);
+    s_signin_qr_size = size_tuple->value->int32;
+  }
+  snprintf(s_instr_text, sizeof(s_instr_text), "github.com/login/device");
   show_signin();
 }
 

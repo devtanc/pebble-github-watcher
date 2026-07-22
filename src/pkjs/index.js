@@ -85,7 +85,7 @@ function loadBoard() {
 function beginSignIn() {
   auth.requestDeviceCode().then(function (info) {
     console.log('device code: ' + info.userCode + ' -> ' + info.verificationUri);
-    send(codec.encodeShowDeviceCode(info));
+    send(codec.encodeShowDeviceCode(info, qrEncoder.encode(info.verificationUri)));
     return auth.pollForToken(info.deviceCode, info.interval);
   }).then(function () {
     console.log('sign-in complete');

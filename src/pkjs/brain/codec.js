@@ -18,12 +18,17 @@ function encodeBoardItem(item) {
   };
 }
 
-function encodeShowDeviceCode(info) {
-  return {
+function encodeShowDeviceCode(info, qr) {
+  var msg = {
     [KEY.MSG_TYPE]: MSG_TYPE.SHOW_DEVICE_CODE,
     [KEY.USER_CODE]: info.userCode,
     [KEY.VERIFY_URL]: info.verificationUri,
   };
+  if (qr) {
+    msg[KEY.SIZE] = qr.size;
+    msg[KEY.DATA] = qr.bytes;
+  }
+  return msg;
 }
 
 function encodeAuthOk() {

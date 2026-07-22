@@ -41,6 +41,13 @@ describe('codec', () => {
     });
   });
 
+  test('device code can carry a QR', () => {
+    const wire = codec.encodeShowDeviceCode(
+      { userCode: 'X', verificationUri: 'u' }, { size: 29, bytes: [1, 2] });
+    expect(wire[KEY.SIZE]).toBe(29);
+    expect(wire[KEY.DATA]).toEqual([1, 2]);
+  });
+
   test('auth ok and auth error round-trip', () => {
     expect(codec.decode(codec.encodeAuthOk())).toEqual({ type: 'AUTH_OK' });
     expect(codec.decode(codec.encodeAuthError('denied'))).toEqual({ type: 'AUTH_ERROR', msg: 'denied' });
