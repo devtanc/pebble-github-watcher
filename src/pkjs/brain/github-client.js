@@ -61,7 +61,7 @@ function createGithubClient(deps) {
         label: labelFor(target, run),
         status: mapStatus(run),
         ageS: ageOf(run),
-        url: run ? run.html_url : null,
+        url: (run && run.html_url) || ('https://github.com/' + target.owner + '/' + target.repo),
       };
     });
   }

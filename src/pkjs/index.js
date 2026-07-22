@@ -8,8 +8,11 @@ var http = require('./brain/http');
 var createAuth = require('./brain/auth').createAuth;
 var createGithubClient = require('./brain/github-client').createGithubClient;
 var createConfigStore = require('./brain/config-store').createConfigStore;
+var qrEncoder = require('./brain/qr-encoder');
 
 function nowMs() { return Date.now(); }
+
+var lastItems = [];
 
 var configStore = createConfigStore({ storage: localStorage });
 
@@ -41,6 +44,21 @@ Pebble.addEventListener('ready', function () {
   console.log('pkjs ready');
   loadBoard();
 });
+
+Pebble.addEventListener('appmessage', function (e) {
+  var msg = codec.decode(e.payload);
+  console.log('rx: ' + msg.type);
+  if (msg.type === 'REQUEST_BOARD') loadBoard();
+  else if (msg.type === 'REQUEST_QR') sendQr(msg.idx);
+});
+
+function sendQr(idx) {
+  var item = lastItems[idx];
+  if (!item || !item.url) { console.log('no url for idx ' + idx); return; }
+  var qr = qrEncoder.encode(item.url);
+  console.log('qr idx ' + idx + ' size=' + qr.size + ' bytes=' + qr.bytes.length + ' url=' + item.url);
+  send(codec.encodeQrData(qr));
+}
 
 function loadBoard() {
   var targets = configStore.getTargets();
@@ -79,6 +97,7 @@ function beginSignIn() {
 }
 
 function sendBoard(items) {
+  lastItems = items;
   var count = items.length;
   function next(i) {
     if (i >= count) {

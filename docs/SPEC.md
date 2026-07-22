@@ -274,7 +274,11 @@ docs/SPEC.md
    `clay-settings`; `DEFAULT_TARGETS` removed → empty-state UI. Verified via seeded Clay settings
    (the tool's `emu-app-config` browser is broken on Python 3.10 — pebble-tool bug, not app code).
 6. **App Glance:** compute in JS, set from C on deinit; wakeup-refresh.
-7. **QR bridge:** encoder (JS) + unpack/draw (C), scan-verified on emulator (also reused by Sign-In).
+7. ✅ **QR bridge:** `qr-encoder.js` (URL→packed bits) + `qr_unpack.c` (bits→grid), wire format
+   cross-verified by a shared fixture. SELECT on a board row → `REQUEST_QR` → `QR_DATA` → C draws the
+   grid with a quiet zone. Verified live (real run URL rendered, driven via `emu-button`). Finding:
+   **watch→phone works on button press** (the earlier init-time failure was timing, not a hard block).
+   *TODO: retrofit the Sign-In screen to also show a QR of github.com/login/device.*
 8. **Actions:** re-run + merge-when-green with confirmation.
 9. **Timeline pins:** estimation + rebble timeline PUT, behind the default-on config flag.
 

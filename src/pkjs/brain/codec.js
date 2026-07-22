@@ -38,6 +38,14 @@ function encodeStatus(message) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.STATUS, [KEY.MSG]: message };
 }
 
+function encodeRequestQr(idx) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.REQUEST_QR, [KEY.IDX]: idx };
+}
+
+function encodeQrData(qr) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
+}
+
 // Decode an incoming payload (from either side) into a logical message.
 // Unknown types are surfaced rather than thrown, so a version skew degrades
 // gracefully instead of crashing the handler.
@@ -66,6 +74,10 @@ function decode(payload) {
       return { type: 'AUTH_ERROR', msg: payload[KEY.MSG] };
     case MSG_TYPE.STATUS:
       return { type: 'STATUS', msg: payload[KEY.MSG] };
+    case MSG_TYPE.REQUEST_QR:
+      return { type: 'REQUEST_QR', idx: payload[KEY.IDX] };
+    case MSG_TYPE.QR_DATA:
+      return { type: 'QR_DATA', size: payload[KEY.SIZE], data: payload[KEY.DATA] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
@@ -78,5 +90,7 @@ module.exports = {
   encodeAuthOk,
   encodeAuthError,
   encodeStatus,
+  encodeRequestQr,
+  encodeQrData,
   decode,
 };

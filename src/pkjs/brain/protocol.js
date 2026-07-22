@@ -10,6 +10,8 @@ const MSG_TYPE = {
   AUTH_OK: 3,           // phone -> watch: signed in, proceed
   AUTH_ERROR: 4,        // phone -> watch: sign-in failed (carries a message)
   STATUS: 5,            // phone -> watch: board status text (empty / error state)
+  REQUEST_QR: 6,        // watch -> phone: "send me a QR for row Idx"
+  QR_DATA: 7,           // phone -> watch: QR grid (Size + packed Data)
 };
 
 // Build status for a board row.
@@ -33,6 +35,8 @@ const KEY = {
   USER_CODE: 'UserCode',
   VERIFY_URL: 'VerifyUrl',
   MSG: 'Msg',
+  SIZE: 'Size',
+  DATA: 'Data',
 };
 
 module.exports = { MSG_TYPE, STATUS, KEY };

@@ -10,6 +10,8 @@
 #define MSG_TYPE_AUTH_OK          3
 #define MSG_TYPE_AUTH_ERROR       4
 #define MSG_TYPE_STATUS           5
+#define MSG_TYPE_REQUEST_QR       6
+#define MSG_TYPE_QR_DATA          7
 
 typedef enum {
   STATUS_UNKNOWN = 0,

@@ -1,6 +1,8 @@
 #include <pebble.h>
+#include <string.h>
 #include "lib/protocol.h"
 #include "lib/view_model.h"
+#include "lib/qr_unpack.h"
 
 #define MAX_ITEMS 16
 
@@ -25,6 +27,12 @@ static TextLayer *s_signin_code;
 static TextLayer *s_signin_instr;
 static char s_user_code[16] = "";
 static char s_instr_text[64] = "Enter at\ngithub.com/login/device";
+
+// QR window
+static Window *s_qr_window = NULL;
+static Layer *s_qr_layer;
+static uint8_t s_qr_bytes[512];
+static int s_qr_size = 0;
 
 // ---- Sign-in window ---------------------------------------------------------
 
@@ -75,6 +83,59 @@ static void show_signin(void) {
 static void hide_signin(void) {
   if (s_signin_window && window_stack_contains_window(s_signin_window)) {
     window_stack_remove(s_signin_window, true);
+  }
+}
+
+// ---- QR window --------------------------------------------------------------
+
+static void qr_update_proc(Layer *layer, GContext *ctx) {
+  GRect b = layer_get_bounds(layer);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, b, 0, GCornerNone);
+  if (s_qr_size <= 0) {
+    return;
+  }
+  const int quiet = 4; // quiet-zone modules per side (needed for scanning)
+  int total = s_qr_size + quiet * 2;
+  int mindim = b.size.w < b.size.h ? b.size.w : b.size.h;
+  int scale = mindim / total;
+  if (scale < 1) scale = 1;
+  int dim = scale * s_qr_size;
+  int ox = (b.size.w - dim) / 2;
+  int oy = (b.size.h - dim) / 2;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  for (int r = 0; r < s_qr_size; r++) {
+    for (int c = 0; c < s_qr_size; c++) {
+      if (qr_module_at(s_qr_bytes, s_qr_size, r, c)) {
+        graphics_fill_rect(ctx, GRect(ox + c * scale, oy + r * scale, scale, scale), 0, GCornerNone);
+      }
+    }
+  }
+}
+
+static void qr_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  s_qr_layer = layer_create(layer_get_bounds(root));
+  layer_set_update_proc(s_qr_layer, qr_update_proc);
+  layer_add_child(root, s_qr_layer);
+}
+
+static void qr_window_unload(Window *window) {
+  layer_destroy(s_qr_layer);
+}
+
+static void show_qr(void) {
+  if (!s_qr_window) {
+    s_qr_window = window_create();
+    window_set_window_handlers(s_qr_window, (WindowHandlers) {
+      .load = qr_window_load,
+      .unload = qr_window_unload,
+    });
+  }
+  if (window_stack_get_top_window() != s_qr_window) {
+    window_stack_push(s_qr_window, true);
+  } else {
+    layer_mark_dirty(s_qr_layer);
   }
 }
 
@@ -131,6 +192,21 @@ static void handle_auth_error(DictionaryIterator *iter) {
   show_signin();
 }
 
+static void handle_qr_data(DictionaryIterator *iter) {
+  Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
+  Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
+  if (!size_tuple || !data_tuple) {
+    return;
+  }
+  uint16_t len = data_tuple->length;
+  if (len > sizeof(s_qr_bytes)) {
+    len = sizeof(s_qr_bytes);
+  }
+  memcpy(s_qr_bytes, data_tuple->value->data, len);
+  s_qr_size = size_tuple->value->int32;
+  show_qr();
+}
+
 static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *type_t = dict_find(iter, MESSAGE_KEY_MsgType);
   if (!type_t) {
@@ -142,6 +218,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     case MSG_TYPE_AUTH_OK:          hide_signin(); break;
     case MSG_TYPE_AUTH_ERROR:       handle_auth_error(iter); break;
     case MSG_TYPE_STATUS:           handle_status(iter); break;
+    case MSG_TYPE_QR_DATA:          handle_qr_data(iter); break;
     default: break;
   }
 }
@@ -164,6 +241,23 @@ static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell_inde
   menu_cell_basic_draw(ctx, cell, it->label, subtitle, NULL);
 }
 
+static void send_request_qr(int idx) {
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) {
+    return;
+  }
+  int type = MSG_TYPE_REQUEST_QR;
+  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
+  dict_write_int(out, MESSAGE_KEY_Idx, &idx, sizeof(int), true);
+  app_message_outbox_send();
+}
+
+static void menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
+  if (cell_index->row < s_count) {
+    send_request_qr(cell_index->row);
+  }
+}
+
 static void main_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
@@ -172,6 +266,7 @@ static void main_window_load(Window *window) {
   menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
     .get_num_rows = menu_get_num_rows,
     .draw_row = menu_draw_row,
+    .select_click = menu_select,
   });
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
@@ -192,7 +287,7 @@ static void main_window_unload(Window *window) {
 
 static void init(void) {
   app_message_register_inbox_received(inbox_received);
-  app_message_open(256, 64);
+  app_message_open(512, 64);
 
   s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers) {
@@ -203,6 +298,9 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  if (s_qr_window) {
+    window_destroy(s_qr_window);
+  }
   if (s_signin_window) {
     window_destroy(s_signin_window);
   }

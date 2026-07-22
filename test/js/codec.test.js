@@ -49,4 +49,13 @@ describe('codec', () => {
   test('status round-trips', () => {
     expect(codec.decode(codec.encodeStatus('No repos'))).toEqual({ type: 'STATUS', msg: 'No repos' });
   });
+
+  test('request-qr round-trips', () => {
+    expect(codec.decode(codec.encodeRequestQr(2))).toEqual({ type: 'REQUEST_QR', idx: 2 });
+  });
+
+  test('qr-data round-trips', () => {
+    expect(codec.decode(codec.encodeQrData({ size: 29, bytes: [1, 2, 3] })))
+      .toEqual({ type: 'QR_DATA', size: 29, data: [1, 2, 3] });
+  });
 });
