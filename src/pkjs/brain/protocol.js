@@ -13,6 +13,8 @@ const MSG_TYPE = {
   REQUEST_QR: 6,        // watch -> phone: "send me a QR for row Idx"
   QR_DATA: 7,           // phone -> watch: QR grid (Size + packed Data)
   GLANCE: 8,            // phone -> watch: launcher subtitle text (Msg)
+  ACTION_RERUN: 9,      // watch -> phone: re-run failed jobs for row Idx
+  ACTION_RESULT: 10,    // phone -> watch: action outcome (Ok + Msg)
 };
 
 // Build status for a board row.
@@ -38,6 +40,7 @@ const KEY = {
   MSG: 'Msg',
   SIZE: 'Size',
   DATA: 'Data',
+  OK: 'Ok',
 };
 
 module.exports = { MSG_TYPE, STATUS, KEY };

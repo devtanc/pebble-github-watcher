@@ -37,6 +37,13 @@ static Layer *s_qr_layer;
 static uint8_t s_qr_bytes[512];
 static int s_qr_size = 0;
 
+// Action window (confirm re-run, then show result)
+static Window *s_action_window = NULL;
+static TextLayer *s_action_text_layer = NULL;
+static char s_action_text[96] = "";
+static int s_action_idx = -1;
+static int s_action_state = 0; // 0 = prompt, 1 = working, 2 = done
+
 // ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
 
 static void draw_qr(GContext *ctx, GRect area, const uint8_t *bytes, int size) {
@@ -238,6 +245,23 @@ static void handle_qr_data(DictionaryIterator *iter) {
   show_qr();
 }
 
+static void handle_action_result(DictionaryIterator *iter) {
+  Tuple *ok_t = dict_find(iter, MESSAGE_KEY_Ok);
+  Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
+  bool ok = ok_t && ok_t->value->int32 == 1;
+  s_action_state = 2;
+  snprintf(s_action_text, sizeof(s_action_text), "%s",
+           msg_t ? msg_t->value->cstring : (ok ? "Done" : "Failed"));
+  if (s_action_text_layer) {
+    text_layer_set_text(s_action_text_layer, s_action_text);
+  }
+  if (ok) {
+    vibes_short_pulse();
+  } else {
+    vibes_double_pulse();
+  }
+}
+
 static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *type_t = dict_find(iter, MESSAGE_KEY_MsgType);
   if (!type_t) {
@@ -251,8 +275,67 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     case MSG_TYPE_STATUS:           handle_status(iter); break;
     case MSG_TYPE_QR_DATA:          handle_qr_data(iter); break;
     case MSG_TYPE_GLANCE:           handle_glance(iter); break;
+    case MSG_TYPE_ACTION_RESULT:    handle_action_result(iter); break;
     default: break;
   }
+}
+
+// ---- Action window (confirm re-run + show result) --------------------------
+
+static void send_action_rerun(int idx) {
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) {
+    return;
+  }
+  int type = MSG_TYPE_ACTION_RERUN;
+  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
+  dict_write_int(out, MESSAGE_KEY_Idx, &idx, sizeof(int), true);
+  app_message_outbox_send();
+}
+
+static void action_confirm(ClickRecognizerRef recognizer, void *context) {
+  if (s_action_state == 0) {
+    send_action_rerun(s_action_idx);
+    s_action_state = 1;
+    snprintf(s_action_text, sizeof(s_action_text), "Re-running…");
+    if (s_action_text_layer) {
+      text_layer_set_text(s_action_text_layer, s_action_text);
+    }
+  }
+}
+
+static void action_click_config(void *context) {
+  window_single_click_subscribe(BUTTON_ID_SELECT, action_confirm);
+}
+
+static void action_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect b = layer_get_bounds(root);
+  s_action_text_layer = text_layer_create(GRect(6, b.size.h / 2 - 42, b.size.w - 12, 84));
+  text_layer_set_text_alignment(s_action_text_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_action_text_layer, GTextOverflowModeWordWrap);
+  text_layer_set_text(s_action_text_layer, s_action_text);
+  layer_add_child(root, text_layer_get_layer(s_action_text_layer));
+}
+
+static void action_unload(Window *window) {
+  text_layer_destroy(s_action_text_layer);
+  s_action_text_layer = NULL;
+}
+
+static void show_action(int idx) {
+  s_action_idx = idx;
+  s_action_state = 0;
+  snprintf(s_action_text, sizeof(s_action_text), "Re-run failed jobs?\n\nSELECT = yes\nBACK = no");
+  if (!s_action_window) {
+    s_action_window = window_create();
+    window_set_window_handlers(s_action_window, (WindowHandlers) {
+      .load = action_load,
+      .unload = action_unload,
+    });
+    window_set_click_config_provider(s_action_window, action_click_config);
+  }
+  window_stack_push(s_action_window, true);
 }
 
 // ---- Board window / MenuLayer ----------------------------------------------
@@ -290,6 +373,14 @@ static void menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
   }
 }
 
+static void menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
+  if (cell_index->row < s_count && s_items[cell_index->row].status == STATUS_FAILURE) {
+    show_action(cell_index->row);
+  } else {
+    vibes_short_pulse(); // no re-run available for this row
+  }
+}
+
 static void main_window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
@@ -299,6 +390,7 @@ static void main_window_load(Window *window) {
     .get_num_rows = menu_get_num_rows,
     .draw_row = menu_draw_row,
     .select_click = menu_select,
+    .select_long_click = menu_select_long,
   });
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   layer_add_child(root, menu_layer_get_layer(s_menu_layer));
@@ -347,6 +439,9 @@ static void glance_reload(AppGlanceReloadSession *session, size_t limit, void *c
 
 static void deinit(void) {
   app_glance_reload(glance_reload, NULL);
+  if (s_action_window) {
+    window_destroy(s_action_window);
+  }
   if (s_qr_window) {
     window_destroy(s_qr_window);
   }

@@ -7,6 +7,7 @@ var API = 'https://api.github.com';
 
 function createGithubClient(deps) {
   var httpGetJson = deps.httpGetJson;
+  var httpPostJson = deps.httpPostJson;
   var now = deps.now;
 
   function headersFor(token) {
@@ -62,6 +63,9 @@ function createGithubClient(deps) {
         status: mapStatus(run),
         ageS: ageOf(run),
         url: (run && run.html_url) || ('https://github.com/' + target.owner + '/' + target.repo),
+        owner: target.owner,
+        repo: target.repo,
+        runId: run ? run.id : null,
       };
     });
   }
@@ -70,7 +74,21 @@ function createGithubClient(deps) {
     return Promise.all(targets.map(function (t) { return fetchTarget(token, t); }));
   }
 
-  return { fetchTarget: fetchTarget, fetchBoard: fetchBoard };
+  // POST rerun-failed-jobs. Resolves { ok, msg }; rejects auth_required on 401.
+  function rerunFailedJobs(token, owner, repo, runId) {
+    var url = API + '/repos/' + owner + '/' + repo + '/actions/runs/' + runId + '/rerun-failed-jobs';
+    return httpPostJson(url, headersFor(token), {}).then(function (res) {
+      if (res.status === 401) {
+        var err = new Error('auth_required');
+        err.code = 'auth_required';
+        throw err;
+      }
+      if (res.status === 201) return { ok: true, msg: 'Re-run started' };
+      return { ok: false, msg: (res.body && res.body.message) ? res.body.message : ('HTTP ' + res.status) };
+    });
+  }
+
+  return { fetchTarget: fetchTarget, fetchBoard: fetchBoard, rerunFailedJobs: rerunFailedJobs };
 }
 
 module.exports = { createGithubClient: createGithubClient };

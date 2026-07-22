@@ -26,7 +26,11 @@ var auth = createAuth({
   getPat: function () { return configStore.getPat(); },
 });
 
-var github = createGithubClient({ httpGetJson: http.httpGetJson, now: nowMs });
+var github = createGithubClient({
+  httpGetJson: http.httpGetJson,
+  httpPostJson: http.httpPostJson,
+  now: nowMs,
+});
 
 // Manual event handling so config stays phone-side (not pushed to the watch).
 var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
@@ -51,7 +55,25 @@ Pebble.addEventListener('appmessage', function (e) {
   console.log('rx: ' + msg.type);
   if (msg.type === 'REQUEST_BOARD') loadBoard();
   else if (msg.type === 'REQUEST_QR') sendQr(msg.idx);
+  else if (msg.type === 'ACTION_RERUN') doRerun(msg.idx);
 });
+
+function doRerun(idx) {
+  var item = lastItems[idx];
+  if (!item || !item.runId) {
+    send(codec.encodeActionResult(false, 'No run'));
+    return;
+  }
+  console.log('rerun idx ' + idx + ' ' + item.owner + '/' + item.repo + ' run ' + item.runId);
+  auth.getAccessToken().then(function (token) {
+    return github.rerunFailedJobs(token, item.owner, item.repo, item.runId);
+  }).then(function (r) {
+    console.log('rerun result: ' + JSON.stringify(r));
+    send(codec.encodeActionResult(r.ok, r.msg));
+  }).catch(function (err) {
+    send(codec.encodeActionResult(false, (err && (err.code || err.message)) || 'failed'));
+  });
+}
 
 function sendQr(idx) {
   var item = lastItems[idx];

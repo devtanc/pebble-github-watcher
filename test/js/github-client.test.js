@@ -52,6 +52,30 @@ describe('github-client fetchTarget', () => {
   });
 });
 
+describe('github-client rerunFailedJobs', () => {
+  test('posts to the rerun-failed-jobs endpoint with auth', async () => {
+    const post = jest.fn().mockResolvedValue({ status: 201, body: {} });
+    const c = createGithubClient({ httpPostJson: post, now: () => T0 });
+    const r = await c.rerunFailedJobs('TOKEN', 'o', 'r', 42);
+    const [url, headers] = post.mock.calls[0];
+    expect(url).toBe('https://api.github.com/repos/o/r/actions/runs/42/rerun-failed-jobs');
+    expect(headers.Authorization).toBe('Bearer TOKEN');
+    expect(r).toEqual({ ok: true, msg: 'Re-run started' });
+  });
+
+  test('surfaces the error message on failure', async () => {
+    const post = jest.fn().mockResolvedValue({ status: 403, body: { message: 'No failed jobs' } });
+    const c = createGithubClient({ httpPostJson: post });
+    expect(await c.rerunFailedJobs('T', 'o', 'r', 1)).toEqual({ ok: false, msg: 'No failed jobs' });
+  });
+
+  test('rejects auth_required on 401', async () => {
+    const post = jest.fn().mockResolvedValue({ status: 401, body: {} });
+    const c = createGithubClient({ httpPostJson: post });
+    await expect(c.rerunFailedJobs('T', 'o', 'r', 1)).rejects.toMatchObject({ code: 'auth_required' });
+  });
+});
+
 describe('github-client fetchBoard', () => {
   test('maps multiple targets in order', async () => {
     const now = () => Date.parse('2026-07-22T00:00:30Z');

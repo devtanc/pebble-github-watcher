@@ -51,6 +51,10 @@ function encodeGlance(text) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.GLANCE, [KEY.MSG]: text };
 }
 
+function encodeActionResult(ok, msg) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.ACTION_RESULT, [KEY.OK]: ok ? 1 : 0, [KEY.MSG]: msg };
+}
+
 function encodeQrData(qr) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
 }
@@ -89,6 +93,10 @@ function decode(payload) {
       return { type: 'QR_DATA', size: payload[KEY.SIZE], data: payload[KEY.DATA] };
     case MSG_TYPE.GLANCE:
       return { type: 'GLANCE', msg: payload[KEY.MSG] };
+    case MSG_TYPE.ACTION_RERUN:
+      return { type: 'ACTION_RERUN', idx: payload[KEY.IDX] };
+    case MSG_TYPE.ACTION_RESULT:
+      return { type: 'ACTION_RESULT', ok: payload[KEY.OK] === 1, msg: payload[KEY.MSG] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
@@ -104,5 +112,6 @@ module.exports = {
   encodeRequestQr,
   encodeQrData,
   encodeGlance,
+  encodeActionResult,
   decode,
 };

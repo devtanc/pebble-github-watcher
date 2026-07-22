@@ -281,7 +281,10 @@ docs/SPEC.md
    grid with a quiet zone. Verified live (real run URL rendered, driven via `emu-button`). Finding:
    **watch→phone works on button press** (the earlier init-time failure was timing, not a hard block).
    *TODO: retrofit the Sign-In screen to also show a QR of github.com/login/device.*
-8. **Actions:** re-run + merge-when-green with confirmation.
+8. ✅ **Actions — re-run failed jobs:** long-press a failed row → confirm → `ACTION_RERUN` →
+   `github-client.rerunFailedJobs` → `ACTION_RESULT` shown on the watch (double-vibe on failure).
+   Verified live via the error path. **Merge-when-green deferred** — needs PR rows on the board (the
+   branch-CI board has no PR context yet); revisit as a board expansion.
 9. **Timeline pins:** estimation + rebble timeline PUT, behind the default-on config flag.
 
 ## 9a. Placeholders to remove (Clay migration)

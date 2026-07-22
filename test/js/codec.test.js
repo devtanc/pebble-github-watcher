@@ -69,4 +69,16 @@ describe('codec', () => {
   test('glance round-trips', () => {
     expect(codec.decode(codec.encodeGlance('All 2 green'))).toEqual({ type: 'GLANCE', msg: 'All 2 green' });
   });
+
+  test('action-rerun decodes with its row index', () => {
+    expect(codec.decode({ [KEY.MSG_TYPE]: MSG_TYPE.ACTION_RERUN, [KEY.IDX]: 1 }))
+      .toEqual({ type: 'ACTION_RERUN', idx: 1 });
+  });
+
+  test('action-result round-trips ok/msg', () => {
+    expect(codec.decode(codec.encodeActionResult(true, 'Re-run started')))
+      .toEqual({ type: 'ACTION_RESULT', ok: true, msg: 'Re-run started' });
+    expect(codec.decode(codec.encodeActionResult(false, 'No failed jobs')))
+      .toEqual({ type: 'ACTION_RESULT', ok: false, msg: 'No failed jobs' });
+  });
 });

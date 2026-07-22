@@ -49,4 +49,23 @@ function httpGetJson(url, headers) {
   });
 }
 
-module.exports = { httpPostForm, httpGetJson };
+// POST a JSON body (or empty) with custom headers; resolve { status, body }.
+function httpPostJson(url, headers, body) {
+  return new Promise(function (resolve) {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    if (headers) {
+      Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
+    }
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.onload = function () {
+      var parsed = {};
+      try { parsed = JSON.parse(xhr.responseText); } catch (e) { parsed = {}; }
+      resolve({ status: xhr.status, body: parsed });
+    };
+    xhr.onerror = function () { resolve({ status: 0, body: {} }); };
+    xhr.send(body ? JSON.stringify(body) : '');
+  });
+}
+
+module.exports = { httpPostForm, httpGetJson, httpPostJson };
