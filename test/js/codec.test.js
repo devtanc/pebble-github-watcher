@@ -33,4 +33,16 @@ describe('codec', () => {
     const out = codec.decode({ [KEY.MSG_TYPE]: 99 });
     expect(out.type).toBe('UNKNOWN');
   });
+
+  test('device code round-trips through encode then decode', () => {
+    const info = { userCode: 'WXYZ-1234', verificationUri: 'https://github.com/login/device' };
+    expect(codec.decode(codec.encodeShowDeviceCode(info))).toEqual({
+      type: 'SHOW_DEVICE_CODE', userCode: 'WXYZ-1234', verificationUri: 'https://github.com/login/device',
+    });
+  });
+
+  test('auth ok and auth error round-trip', () => {
+    expect(codec.decode(codec.encodeAuthOk())).toEqual({ type: 'AUTH_OK' });
+    expect(codec.decode(codec.encodeAuthError('denied'))).toEqual({ type: 'AUTH_ERROR', msg: 'denied' });
+  });
 });

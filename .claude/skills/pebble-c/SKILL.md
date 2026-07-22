@@ -105,6 +105,7 @@ Add `APP_LOG(APP_LOG_LEVEL_DEBUG, "x = %d", (int)x);` for tracing (`%d` needs an
 
 - **Blank screen / crash on launch:** a layer was added to the window but its backing object was destroyed too early, or a `NULL` bitmap/font from a failed `_create_with_resource`. Check resource names match `package.json`.
 - **AppMessage never arrives:** buffers too small (`app_message_open` sizes), key not in `messageKeys`, or JS sent before the `ready` event fired.
+- **pkjs build fails with `SyntaxError: Unexpected token`:** `async`/`await` syntax isn't supported by the SDK's JS bundler — use `Promise.then()` chains. Promises/XHR work fine at runtime; only the async *syntax* breaks the build. See `references/data-comms.md`.
 - **`%f` prints garbage:** the embedded libc has no float formatting; scale to int or split whole/fraction.
 - **Works on basalt, breaks on chalk:** hardcoded rectangular coordinates; use `layer_get_bounds` and `PBL_IF_ROUND_ELSE`.
 - **Out of memory:** unfreed bitmaps in a redraw loop, or loading large images on aplite. Reuse one `GBitmap`, or gate large assets to color platforms.

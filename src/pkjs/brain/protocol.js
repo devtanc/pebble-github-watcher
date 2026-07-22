@@ -4,8 +4,11 @@
 
 // Discriminator carried in every message (the MsgType key).
 const MSG_TYPE = {
-  REQUEST_BOARD: 0, // watch -> phone: "send me the board"
-  BOARD_ITEM: 1,    // phone -> watch: one row of the board (sent as a sequence)
+  REQUEST_BOARD: 0,     // watch -> phone: "send me the board"
+  BOARD_ITEM: 1,        // phone -> watch: one row of the board (sent as a sequence)
+  SHOW_DEVICE_CODE: 2,  // phone -> watch: display this device-flow code
+  AUTH_OK: 3,           // phone -> watch: signed in, proceed
+  AUTH_ERROR: 4,        // phone -> watch: sign-in failed (carries a message)
 };
 
 // Build status for a board row.
@@ -26,6 +29,9 @@ const KEY = {
   LABEL: 'Label',
   STATUS: 'Status',
   AGE_S: 'AgeS',
+  USER_CODE: 'UserCode',
+  VERIFY_URL: 'VerifyUrl',
+  MSG: 'Msg',
 };
 
 module.exports = { MSG_TYPE, STATUS, KEY };

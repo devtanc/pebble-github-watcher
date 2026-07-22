@@ -37,7 +37,10 @@
       "Count",
       "Label",
       "Status",
-      "AgeS"
+      "AgeS",
+      "UserCode",
+      "VerifyUrl",
+      "Msg"
     ],
     "resources": {
       "media": []

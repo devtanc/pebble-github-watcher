@@ -18,6 +18,22 @@ function encodeBoardItem(item) {
   };
 }
 
+function encodeShowDeviceCode(info) {
+  return {
+    [KEY.MSG_TYPE]: MSG_TYPE.SHOW_DEVICE_CODE,
+    [KEY.USER_CODE]: info.userCode,
+    [KEY.VERIFY_URL]: info.verificationUri,
+  };
+}
+
+function encodeAuthOk() {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.AUTH_OK };
+}
+
+function encodeAuthError(message) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.AUTH_ERROR, [KEY.MSG]: message };
+}
+
 // Decode an incoming payload (from either side) into a logical message.
 // Unknown types are surfaced rather than thrown, so a version skew degrades
 // gracefully instead of crashing the handler.
@@ -34,9 +50,26 @@ function decode(payload) {
         status: payload[KEY.STATUS],
         ageS: payload[KEY.AGE_S],
       };
+    case MSG_TYPE.SHOW_DEVICE_CODE:
+      return {
+        type: 'SHOW_DEVICE_CODE',
+        userCode: payload[KEY.USER_CODE],
+        verificationUri: payload[KEY.VERIFY_URL],
+      };
+    case MSG_TYPE.AUTH_OK:
+      return { type: 'AUTH_OK' };
+    case MSG_TYPE.AUTH_ERROR:
+      return { type: 'AUTH_ERROR', msg: payload[KEY.MSG] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
 }
 
-module.exports = { encodeRequestBoard, encodeBoardItem, decode };
+module.exports = {
+  encodeRequestBoard,
+  encodeBoardItem,
+  encodeShowDeviceCode,
+  encodeAuthOk,
+  encodeAuthError,
+  decode,
+};

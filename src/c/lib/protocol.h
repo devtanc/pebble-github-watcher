@@ -4,8 +4,11 @@
 // referenced in C as MESSAGE_KEY_<name>; the numeric values below are the ones
 // this file owns.
 
-#define MSG_TYPE_REQUEST_BOARD 0
-#define MSG_TYPE_BOARD_ITEM    1
+#define MSG_TYPE_REQUEST_BOARD    0
+#define MSG_TYPE_BOARD_ITEM       1
+#define MSG_TYPE_SHOW_DEVICE_CODE 2
+#define MSG_TYPE_AUTH_OK          3
+#define MSG_TYPE_AUTH_ERROR       4
 
 typedef enum {
   STATUS_UNKNOWN = 0,

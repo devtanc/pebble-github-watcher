@@ -111,6 +111,7 @@ function fetchWeather() {
 ```
 
 Key points:
+- **No `async`/`await` syntax in pkjs source.** The Pebble SDK's JS bundler (an old webpack) cannot parse async/await and fails the build with `SyntaxError: Unexpected token`. Write `Promise` `.then()` chains instead. Everything else needed is available *both* through the bundler and at runtime: `Promise`, `XMLHttpRequest`, `setTimeout`, `Object.assign`, `Array.find`, `localStorage`, `let`/`const`, arrow functions, and computed property keys. Only `async`/`await` (ES2017) is rejected — and only by the build step; the runtime itself does support it, which makes this easy to miss. Test any Promise-based module with Jest in Node (where async/await is fine in the *test* file), and keep the source itself async-free.
 - **Do not send before `ready`.** Sending earlier silently fails.
 - `Pebble.sendAppMessage(dict, onSuccess, onFailure)` — values are auto-typed (JS number → int, string → cstring, array of bytes → data).
 - Network uses standard `XMLHttpRequest` (no `fetch` guarantee across SDK versions; XHR is safe). CORS does not apply — it's a native sandbox.
