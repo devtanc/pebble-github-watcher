@@ -267,8 +267,10 @@ docs/SPEC.md
    the QR milestone); PAT fallback. Verified live against real GitHub.
 3. ✅ **GitHub client:** real Actions status on the board (`brain/github-client.js`,
    `brain/config-store.js`). Verified live.
-4. **Rate governor:** ETag conditional requests + adaptive backoff (`brain/rate-governor.js`), layered
-   under the GitHub client. *(split out of the original M3.)*
+4. ✅ **Rate governor:** `rate-governor.js` wraps GETs with ETag conditional requests + budget-aware
+   backoff; sits under the GitHub client. Board also refreshes on the configured interval while open.
+   Verified live — two board loads held the rate budget at 4995 (second was a 304). *Follow-up:
+   wakeup-based refresh between opens.*
 5. ✅ **Clay config page:** phone settings UI (`@rebble/clay` — the maintained fork) for watched
    targets, PAT, client-id override, poll interval, timeline toggle. `config-store` reads Clay's
    `clay-settings`; `DEFAULT_TARGETS` removed → empty-state UI. Verified via seeded Clay settings

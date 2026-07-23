@@ -8,6 +8,7 @@ var http = require('./brain/http');
 var createAuth = require('./brain/auth').createAuth;
 var createGithubClient = require('./brain/github-client').createGithubClient;
 var createConfigStore = require('./brain/config-store').createConfigStore;
+var createRateGovernor = require('./brain/rate-governor').createRateGovernor;
 var qrEncoder = require('./brain/qr-encoder');
 var glance = require('./brain/glance');
 
@@ -26,8 +27,10 @@ var auth = createAuth({
   getPat: function () { return configStore.getPat(); },
 });
 
+// The rate governor wraps GETs with ETag conditional requests + budget tracking.
+var governor = createRateGovernor({ httpGetJson: http.httpGetJson, storage: localStorage, now: nowMs });
 var github = createGithubClient({
-  httpGetJson: http.httpGetJson,
+  httpGetJson: governor.get,
   httpPostJson: http.httpPostJson,
   now: nowMs,
 });
@@ -48,7 +51,18 @@ Pebble.addEventListener('webviewclosed', function (e) {
 Pebble.addEventListener('ready', function () {
   console.log('pkjs ready');
   loadBoard();
+  scheduleRefresh();
 });
+
+// Refresh the board on the configured interval while the app is open, backing
+// off when the rate budget is low. ETag conditional requests keep it cheap.
+function scheduleRefresh() {
+  var base = configStore.getPollMinutes() * 60 * 1000;
+  setTimeout(function () {
+    loadBoard();
+    scheduleRefresh();
+  }, governor.suggestInterval(base));
+}
 
 Pebble.addEventListener('appmessage', function (e) {
   var msg = codec.decode(e.payload);
@@ -93,7 +107,7 @@ function loadBoard() {
   auth.getAccessToken().then(function (token) {
     return github.fetchBoard(token, targets);
   }).then(function (items) {
-    console.log('board: ' + items.length + ' targets');
+    console.log('board: ' + items.length + ' targets, rate remaining: ' + governor.getRemaining());
     sendBoard(items);
   }).catch(function (err) {
     if (err && err.code === 'auth_required') {
