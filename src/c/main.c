@@ -262,6 +262,19 @@ static void handle_action_result(DictionaryIterator *iter) {
   }
 }
 
+static void handle_wakeup(DictionaryIterator *iter) {
+  Tuple *time_tuple = dict_find(iter, MESSAGE_KEY_Time);
+  if (!time_tuple) {
+    return;
+  }
+  time_t when = (time_t) time_tuple->value->int32;
+  if (when <= time(NULL) + 60) {
+    return; // too soon or in the past to schedule
+  }
+  wakeup_cancel_all();
+  wakeup_schedule(when, 0, true); // notify_if_missed
+}
+
 static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *type_t = dict_find(iter, MESSAGE_KEY_MsgType);
   if (!type_t) {
@@ -276,6 +289,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     case MSG_TYPE_QR_DATA:          handle_qr_data(iter); break;
     case MSG_TYPE_GLANCE:           handle_glance(iter); break;
     case MSG_TYPE_ACTION_RESULT:    handle_action_result(iter); break;
+    case MSG_TYPE_WAKEUP:           handle_wakeup(iter); break;
     default: break;
   }
 }
@@ -410,6 +424,10 @@ static void main_window_unload(Window *window) {
 // ---- App lifecycle ----------------------------------------------------------
 
 static void init(void) {
+  if (launch_reason() == APP_LAUNCH_WAKEUP) {
+    APP_LOG(APP_LOG_LEVEL_INFO, "woke via wakeup");
+    vibes_double_pulse(); // woke at the estimated build-done time
+  }
   app_message_register_inbox_received(inbox_received);
   app_message_open(512, 64);
 

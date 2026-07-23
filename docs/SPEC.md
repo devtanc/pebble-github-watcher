@@ -287,7 +287,12 @@ docs/SPEC.md
    `github-client.rerunFailedJobs` → `ACTION_RESULT` shown on the watch (double-vibe on failure).
    Verified live via the error path. **Merge-when-green deferred** — needs PR rows on the board (the
    branch-CI board has no PR context yet); revisit as a board expansion.
-9. **Timeline pins:** estimation + rebble timeline PUT, behind the default-on config flag.
+9. ✅ **"Build likely done" alerts:** `timeline-planner.js` estimates completion from the trailing
+   average of recent run durations; for in-progress runs pkjs schedules a **local wakeup** on the watch
+   (verified live — the wakeup fired, relaunched the app, and buzzed) and best-effort pushes a timeline
+   pin behind the default-on toggle. **Pins can't be exercised in the emulator** — its phonesim targets
+   the dead `getpebble.com` timeline server (`getTimelineToken` fails), which is exactly why pins are
+   optional and the local wakeup is load-bearing. Estimation + pin logic fully unit-tested.
 
 ## 9a. Placeholders to remove (Clay migration)
 
@@ -301,7 +306,7 @@ of the dynamic value at the milestone noted — no hardcoded config may remain p
 | ✅ Client-id override | `src/pkjs/config.js` + Clay | baked-in `GITHUB_CLIENT_ID` (stays as default) | Clay `clientId` override | **Done (M5)** — override wired in `index.js`; baked-in value remains the default |
 | Poll interval | `index.js` (once polling is added, M4/M6) | to be a constant when introduced | Clay "poll interval" | **M5** |
 | ✅ Glance target | `glance.js` | ~~needed~~ n/a | auto-summary (failing-first) | **Resolved (M6)** — summarizes all repos; no per-repo Clay field needed |
-| Timeline pins toggle | Timeline (M9) | default on | Clay "use timeline pins" | **M9** |
+| ✅ Timeline pins toggle | `config-store.js` | ~~needed~~ | Clay `useTimeline` (default on) | **Done (M9)** — read via `getUseTimeline()` |
 
 ## 10. Decisions (resolved)
 

@@ -15,6 +15,7 @@ const MSG_TYPE = {
   GLANCE: 8,            // phone -> watch: launcher subtitle text (Msg)
   ACTION_RERUN: 9,      // watch -> phone: re-run failed jobs for row Idx
   ACTION_RESULT: 10,    // phone -> watch: action outcome (Ok + Msg)
+  WAKEUP: 11,           // phone -> watch: schedule a wakeup at epoch Time (build-done ETA)
 };
 
 // Build status for a board row.
@@ -41,6 +42,7 @@ const KEY = {
   SIZE: 'Size',
   DATA: 'Data',
   OK: 'Ok',
+  TIME: 'Time',
 };
 
 module.exports = { MSG_TYPE, STATUS, KEY };

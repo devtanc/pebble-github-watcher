@@ -9,8 +9,11 @@ var createAuth = require('./brain/auth').createAuth;
 var createGithubClient = require('./brain/github-client').createGithubClient;
 var createConfigStore = require('./brain/config-store').createConfigStore;
 var createRateGovernor = require('./brain/rate-governor').createRateGovernor;
+var createTimeline = require('./brain/timeline').createTimeline;
+var timelinePlanner = require('./brain/timeline-planner');
 var qrEncoder = require('./brain/qr-encoder');
 var glance = require('./brain/glance');
+var STATUS = require('./brain/protocol').STATUS;
 
 function nowMs() { return Date.now(); }
 
@@ -33,6 +36,11 @@ var github = createGithubClient({
   httpGetJson: governor.get,
   httpPostJson: http.httpPostJson,
   now: nowMs,
+});
+
+var timeline = createTimeline({
+  getToken: function (ok, fail) { Pebble.getTimelineToken(ok, fail); },
+  httpPut: http.httpPut,
 });
 
 // Manual event handling so config stays phone-side (not pushed to the watch).
@@ -104,11 +112,14 @@ function loadBoard() {
       function () { send(codec.encodeGlance(glance.summarize([]))); });
     return;
   }
+  var tok;
   auth.getAccessToken().then(function (token) {
+    tok = token;
     return github.fetchBoard(token, targets);
   }).then(function (items) {
     console.log('board: ' + items.length + ' targets, rate remaining: ' + governor.getRemaining());
     sendBoard(items);
+    planAlerts(tok, targets, items);
   }).catch(function (err) {
     if (err && err.code === 'auth_required') {
       auth.signOut();
@@ -132,6 +143,31 @@ function beginSignIn() {
     console.log('sign-in failed: ' + (err && (err.code || err.message)));
     send(codec.encodeAuthError((err && (err.code || err.message)) || 'sign-in failed'));
   });
+}
+
+// For each in-progress run, estimate completion and (a) schedule a local wakeup
+// on the watch and (b) best-effort push a timeline pin (if enabled).
+function planAlerts(token, targets, items) {
+  for (var i = 0; i < items.length; i++) {
+    if (items[i].status === STATUS.IN_PROGRESS) {
+      planOne(token, targets[i], items[i]);
+    }
+  }
+}
+
+function planOne(token, target, item) {
+  github.fetchRunTimings(token, target).then(function (t) {
+    if (!t.inProgress) return;
+    var avg = timelinePlanner.averageDurationS(t.completed);
+    var eta = timelinePlanner.estimateEtaMs(t.inProgress.startedAtMs, avg);
+    if (!eta) return;
+    console.log('eta ' + item.label + ': ' + new Date(eta).toISOString());
+    send(codec.encodeWakeup(Math.floor(eta / 1000)));
+    if (configStore.getUseTimeline()) {
+      var p = timelinePlanner.buildPin('ghw-' + t.inProgress.id, item.label + ' build', eta);
+      timeline.pushPin(p).then(function (r) { console.log('pin: ' + JSON.stringify(r)); });
+    }
+  }).catch(function (e) { console.log('plan error: ' + (e && (e.code || e.message))); });
 }
 
 function sendBoard(items) {

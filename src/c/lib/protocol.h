@@ -15,6 +15,7 @@
 #define MSG_TYPE_GLANCE           8
 #define MSG_TYPE_ACTION_RERUN     9
 #define MSG_TYPE_ACTION_RESULT    10
+#define MSG_TYPE_WAKEUP           11
 
 typedef enum {
   STATUS_UNKNOWN = 0,

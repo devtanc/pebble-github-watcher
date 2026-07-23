@@ -55,6 +55,10 @@ function encodeActionResult(ok, msg) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.ACTION_RESULT, [KEY.OK]: ok ? 1 : 0, [KEY.MSG]: msg };
 }
 
+function encodeWakeup(epochSeconds) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.WAKEUP, [KEY.TIME]: epochSeconds };
+}
+
 function encodeQrData(qr) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
 }
@@ -97,6 +101,8 @@ function decode(payload) {
       return { type: 'ACTION_RERUN', idx: payload[KEY.IDX] };
     case MSG_TYPE.ACTION_RESULT:
       return { type: 'ACTION_RESULT', ok: payload[KEY.OK] === 1, msg: payload[KEY.MSG] };
+    case MSG_TYPE.WAKEUP:
+      return { type: 'WAKEUP', time: payload[KEY.TIME] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
@@ -113,5 +119,6 @@ module.exports = {
   encodeQrData,
   encodeGlance,
   encodeActionResult,
+  encodeWakeup,
   decode,
 };

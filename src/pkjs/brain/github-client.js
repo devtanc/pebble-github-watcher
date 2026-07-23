@@ -18,10 +18,10 @@ function createGithubClient(deps) {
     };
   }
 
-  function runsUrl(target) {
+  function runsUrl(target, perPage) {
     var base = API + '/repos/' + target.owner + '/' + target.repo;
     base += target.workflow ? ('/actions/workflows/' + target.workflow + '/runs') : '/actions/runs';
-    var url = base + '?per_page=1';
+    var url = base + '?per_page=' + (perPage || 1);
     if (target.branch) url += '&branch=' + encodeURIComponent(target.branch);
     return url;
   }
@@ -74,6 +74,31 @@ function createGithubClient(deps) {
     return Promise.all(targets.map(function (t) { return fetchTarget(token, t); }));
   }
 
+  // Fetch recent runs and split into the current in-progress run (if any) and
+  // the completed runs' timings. Used to estimate a "build likely done" ETA.
+  function fetchRunTimings(token, target) {
+    return httpGetJson(runsUrl(target, 10), headersFor(token)).then(function (res) {
+      if (res.status === 401) {
+        var err = new Error('auth_required');
+        err.code = 'auth_required';
+        throw err;
+      }
+      var runs = (res.body && res.body.workflow_runs) || [];
+      var inProgress = null;
+      var completed = [];
+      for (var i = 0; i < runs.length; i++) {
+        var r = runs[i];
+        var startedAt = Date.parse(r.run_started_at || r.created_at);
+        if (r.status !== 'completed') {
+          if (!inProgress) inProgress = { id: r.id, startedAtMs: startedAt };
+        } else {
+          completed.push({ startedAtMs: startedAt, endedAtMs: Date.parse(r.updated_at) });
+        }
+      }
+      return { inProgress: inProgress, completed: completed };
+    });
+  }
+
   // POST rerun-failed-jobs. Resolves { ok, msg }; rejects auth_required on 401.
   function rerunFailedJobs(token, owner, repo, runId) {
     var url = API + '/repos/' + owner + '/' + repo + '/actions/runs/' + runId + '/rerun-failed-jobs';
@@ -88,7 +113,12 @@ function createGithubClient(deps) {
     });
   }
 
-  return { fetchTarget: fetchTarget, fetchBoard: fetchBoard, rerunFailedJobs: rerunFailedJobs };
+  return {
+    fetchTarget: fetchTarget,
+    fetchBoard: fetchBoard,
+    fetchRunTimings: fetchRunTimings,
+    rerunFailedJobs: rerunFailedJobs,
+  };
 }
 
 module.exports = { createGithubClient: createGithubClient };

@@ -52,6 +52,22 @@ describe('github-client fetchTarget', () => {
   });
 });
 
+describe('github-client fetchRunTimings', () => {
+  test('splits in-progress from completed runs', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: { workflow_runs: [
+      { id: 5, status: 'in_progress', run_started_at: '2026-07-22T00:00:00Z' },
+      { id: 4, status: 'completed', run_started_at: '2026-07-21T00:00:00Z', updated_at: '2026-07-21T00:02:00Z' },
+    ] } });
+    const c = client(http);
+    const r = await c.fetchRunTimings('T', { owner: 'o', repo: 'r', branch: 'main' });
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/actions/runs?per_page=10&branch=main');
+    expect(r.inProgress).toEqual({ id: 5, startedAtMs: Date.parse('2026-07-22T00:00:00Z') });
+    expect(r.completed).toEqual([
+      { startedAtMs: Date.parse('2026-07-21T00:00:00Z'), endedAtMs: Date.parse('2026-07-21T00:02:00Z') },
+    ]);
+  });
+});
+
 describe('github-client rerunFailedJobs', () => {
   test('posts to the rerun-failed-jobs endpoint with auth', async () => {
     const post = jest.fn().mockResolvedValue({ status: 201, body: {} });

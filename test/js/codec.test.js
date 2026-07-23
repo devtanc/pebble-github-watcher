@@ -81,4 +81,8 @@ describe('codec', () => {
     expect(codec.decode(codec.encodeActionResult(false, 'No failed jobs')))
       .toEqual({ type: 'ACTION_RESULT', ok: false, msg: 'No failed jobs' });
   });
+
+  test('wakeup round-trips its epoch time', () => {
+    expect(codec.decode(codec.encodeWakeup(1800000000))).toEqual({ type: 'WAKEUP', time: 1800000000 });
+  });
 });
