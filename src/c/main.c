@@ -197,6 +197,32 @@ static void send_action(int flat_idx, int kind) {
   app_message_outbox_send();
 }
 
+// Launch handshake. The phone pushes the board on its JS `ready` event, but on
+// real hardware that one-shot push can be missed (ready fires before our inbox
+// is open, already fired for this JS session, or the BT message is dropped) —
+// leaving the watch stuck on "Loading…" forever with no recovery. So the watch
+// actively asks for the board and RETRIES until the first reply arrives. In the
+// emulator these early sends may be dropped, but the phone's `ready` push still
+// delivers there, so both environments are covered.
+static bool s_first_inbound = false;
+static int s_request_attempts = 0;
+
+static void request_board(void) {
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) return; // busy/not-connected: the timer retries
+  int type = MSG_TYPE_REQUEST_BOARD;
+  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
+  app_message_outbox_send();
+}
+
+static void request_retry(void *data) {
+  if (s_first_inbound) return;         // phone answered — stop asking
+  if (s_request_attempts >= 8) return; // give up after ~20s; user can relaunch
+  s_request_attempts++;
+  request_board();
+  app_timer_register(2500, request_retry, NULL);
+}
+
 // ---- Level 3: item detail (folds the action confirm/result) -----------------
 
 static void detail_render(void) {
@@ -588,6 +614,7 @@ static void handle_wakeup(DictionaryIterator *iter) {
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
+  s_first_inbound = true; // any reply from the phone ends the launch handshake retries
   Tuple *type_t = dict_find(iter, MESSAGE_KEY_MsgType);
   if (!type_t) return;
   switch (type_t->value->int32) {
@@ -637,6 +664,11 @@ static void init(void) {
   app_message_register_inbox_dropped(inbox_dropped);
   app_message_register_outbox_failed(outbox_failed);
   app_message_open(512, 64);
+  // Kick off the launch handshake shortly after opening the inbox, then let the
+  // timer retry until the phone answers (see request_retry). This is what makes
+  // the initial load survive real-hardware BT timing instead of depending on the
+  // phone's single `ready` push landing at exactly the right moment.
+  app_timer_register(1000, request_retry, NULL);
 
   s_main_window = window_create();
   window_set_window_handlers(s_main_window, (WindowHandlers) {
