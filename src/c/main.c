@@ -445,6 +445,13 @@ static void refresh_menus(void) {
 
 // ---- Incoming messages (phone -> watch) ------------------------------------
 
+// Drop every cached QR. Called when a fresh board begins arriving so items that
+// vanished (e.g. a merged PR) can't leave a stale QR behind at a reused index.
+static void reset_qr_cache(void) {
+  for (int i = 0; i < MAX_BOARD; i++) s_qr_cache_size[i] = 0;
+  s_qr_current = -1;
+}
+
 static void handle_board_repo(DictionaryIterator *iter) {
   Tuple *ri = dict_find(iter, MESSAGE_KEY_RepoIdx);
   Tuple *cnt = dict_find(iter, MESSAGE_KEY_Count);
@@ -453,6 +460,7 @@ static void handle_board_repo(DictionaryIterator *iter) {
   if (!ri || !name || !st) return;
   int i = ri->value->int32;
   if (i < 0 || i >= MAX_REPOS) return;
+  if (i == 0) reset_qr_cache(); // first repo of a new board load
   if (cnt) {
     int c = cnt->value->int32;
     s_repo_count = (c > MAX_REPOS) ? MAX_REPOS : (uint8_t) c;
@@ -502,6 +510,7 @@ static void handle_status(DictionaryIterator *iter) {
     text_layer_set_text(s_status_layer, s_status_text);
   }
   s_repo_count = 0;
+  reset_qr_cache(); // board replaced by a status screen — no items to point at
   layer_set_hidden(text_layer_get_layer(s_status_layer), false);
   refresh_menus();
 }
