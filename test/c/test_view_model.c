@@ -46,6 +46,14 @@ void test_status_words(void) {
   TEST_ASSERT_EQUAL_STRING("Unknown", vm_status_word(STATUS_UNKNOWN));
 }
 
+void test_dur(void) {
+  char buf[16];
+  vm_format_dur(45, buf, sizeof(buf));   TEST_ASSERT_EQUAL_STRING("45s", buf);
+  vm_format_dur(75, buf, sizeof(buf));   TEST_ASSERT_EQUAL_STRING("1m 15s", buf);
+  vm_format_dur(120, buf, sizeof(buf));  TEST_ASSERT_EQUAL_STRING("2m", buf);
+  vm_format_dur(3900, buf, sizeof(buf)); TEST_ASSERT_EQUAL_STRING("1h 5m", buf);
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_age_seconds);
@@ -54,5 +62,6 @@ int main(void) {
   RUN_TEST(test_age_days);
   RUN_TEST(test_status_glyphs);
   RUN_TEST(test_status_words);
+  RUN_TEST(test_dur);
   return UNITY_END();
 }

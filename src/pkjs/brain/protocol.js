@@ -55,6 +55,9 @@ const KEY = {
   ACTION: 'Action',
   REPO_IDX: 'RepoIdx',
   NUM: 'Num',
+  BRANCH: 'Branch',
+  SHA: 'Sha',
+  DUR: 'Dur',
 };
 
 module.exports = { MSG_TYPE, STATUS, ROW_ACTION, KEY };

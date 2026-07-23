@@ -33,3 +33,16 @@ const char *vm_status_word(uint8_t status) {
     default:                 return "Unknown";
   }
 }
+
+void vm_format_dur(uint32_t seconds, char *out, size_t out_len) {
+  if (seconds < 60) {
+    snprintf(out, out_len, "%us", (unsigned) seconds);
+  } else if (seconds < 3600) {
+    unsigned m = seconds / 60, s = seconds % 60;
+    if (s) snprintf(out, out_len, "%um %us", m, s);
+    else snprintf(out, out_len, "%um", m);
+  } else {
+    unsigned h = seconds / 3600, m = (seconds % 3600) / 60;
+    snprintf(out, out_len, "%uh %um", h, m);
+  }
+}

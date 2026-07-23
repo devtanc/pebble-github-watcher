@@ -81,9 +81,17 @@ function createGithubClient(deps) {
       var runs = (res.body && res.body.workflow_runs) || [];
       var run = runs[0] || null;
       var status = mapStatus(run);
+      var dur = 0;
+      if (run && run.run_started_at && run.updated_at) {
+        var d = Math.floor((Date.parse(run.updated_at) - Date.parse(run.run_started_at)) / 1000);
+        dur = d > 0 ? d : 0;
+      }
       return {
         label: labelFor(target, run),
-        title: 'CI', // level-2 row title within a repo
+        title: (run && run.name) || 'No runs', // level-2 row title = workflow name
+        branch: (run && run.head_branch) || '',
+        sha: (run && run.head_sha) ? run.head_sha.substring(0, 7) : '',
+        durationS: dur,
         status: status,
         ageS: ageOf(run),
         url: (run && run.html_url) || ('https://github.com/' + target.owner + '/' + target.repo),

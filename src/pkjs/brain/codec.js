@@ -27,6 +27,9 @@ function encodeBoardItem(item) {
     [KEY.AGE_S]: item.ageS,
     [KEY.ACTION]: item.action || 0,
     [KEY.NUM]: item.num || 0,
+    [KEY.BRANCH]: item.branch || '',
+    [KEY.SHA]: item.sha || '',
+    [KEY.DUR]: item.durationS || 0,
   };
 }
 
@@ -104,6 +107,9 @@ function decode(payload) {
         ageS: payload[KEY.AGE_S],
         action: payload[KEY.ACTION],
         num: payload[KEY.NUM],
+        branch: payload[KEY.BRANCH],
+        sha: payload[KEY.SHA],
+        durationS: payload[KEY.DUR],
       };
     case MSG_TYPE.SHOW_DEVICE_CODE:
       return {

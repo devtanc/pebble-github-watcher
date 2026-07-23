@@ -5,27 +5,33 @@
 #include "lib/qr_unpack.h"
 
 #define MAX_REPOS 16
-#define MAX_CHILDREN 12
+#define MAX_BOARD 16
 #define PERSIST_KEY_GLANCE 1
 
 typedef struct {
-  char title[40];
+  char title[40];   // workflow name (CI) or PR title
   uint8_t status;
   uint32_t age_s;
   uint8_t action;   // ROW_ACTION_*
   int flat_idx;     // index into pkjs's flat item list (for QR / actions)
   int pr;           // PR number (0 for CI)
+  char branch[20];  // CI: run branch
+  char sha[10];     // CI: short commit sha
+  uint32_t dur_s;   // CI: run duration (seconds)
 } Child;
 
 typedef struct {
   char name[32];
-  uint8_t status;   // aggregate
+  uint8_t status;       // aggregate
   uint8_t child_count;
-  Child children[MAX_CHILDREN];
+  uint8_t child_start;  // index into s_children of this repo's first item
 } Repo;
 
 static Repo s_repos[MAX_REPOS];
 static uint8_t s_repo_count = 0;
+// Children live in one flat pool indexed by their flat index (items arrive
+// grouped by repo, so each repo's items are contiguous).
+static Child s_children[MAX_BOARD];
 static int s_sel_repo = 0;   // repo currently drilled into
 static char s_status_text[96] = "Loading…";
 
@@ -61,6 +67,7 @@ static Window *s_qr_window = NULL;
 static Layer *s_qr_layer;
 static uint8_t s_qr_bytes[512];
 static int s_qr_size = 0;
+static bool s_qr_pending = false; // awaiting a QR the user just requested
 
 // ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
 
@@ -266,22 +273,33 @@ static void detail_unload(Window *window) {
 }
 
 static void show_detail(int repo_idx, int child_idx) {
-  Child *c = &s_repos[repo_idx].children[child_idx];
+  Child *c = &s_children[s_repos[repo_idx].child_start + child_idx];
   s_detail_flat_idx = c->flat_idx;
   s_detail_action = c->action;
   s_detail_state = 0;
-  if (c->pr > 0) {
-    snprintf(s_detail_title, sizeof(s_detail_title), "#%d %s", c->pr, c->title);
-  } else {
-    snprintf(s_detail_title, sizeof(s_detail_title), "%s", c->title);
-  }
 
   char age[8];
   vm_format_age(c->age_s, age, sizeof(age));
   const char *prompt = "";
   if (c->action == ROW_ACTION_MERGE) prompt = "\n\nSELECT to merge";
   else if (c->action == ROW_ACTION_RERUN) prompt = "\n\nSELECT to re-run";
-  snprintf(s_detail_status, sizeof(s_detail_status), "%s · %s%s", vm_status_word(c->status), age, prompt);
+
+  if (c->pr > 0) {
+    snprintf(s_detail_title, sizeof(s_detail_title), "#%d %s", c->pr, c->title);
+    snprintf(s_detail_status, sizeof(s_detail_status), "%s · updated %s ago%s",
+             vm_status_word(c->status), age, prompt);
+  } else {
+    snprintf(s_detail_title, sizeof(s_detail_title), "%s", c->title);
+    char took[24] = "";
+    if (c->dur_s > 0) {
+      char d[16];
+      vm_format_dur(c->dur_s, d, sizeof(d));
+      snprintf(took, sizeof(took), " · took %s", d);
+    }
+    snprintf(s_detail_status, sizeof(s_detail_status), "%s @ %s\nran %s ago%s\n%s%s",
+             c->branch[0] ? c->branch : "?", c->sha[0] ? c->sha : "?", age, took,
+             vm_status_word(c->status), prompt);
+  }
 
   if (!s_detail_window) {
     s_detail_window = window_create();
@@ -311,12 +329,16 @@ static void repo_menu_draw_header(GContext *ctx, const Layer *cell, uint16_t sec
 static void repo_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell_index, void *context) {
   Repo *repo = &s_repos[s_sel_repo];
   if (cell_index->row >= repo->child_count) return;
-  Child *c = &repo->children[cell_index->row];
+  Child *c = &s_children[repo->child_start + cell_index->row];
   char age[8];
   vm_format_age(c->age_s, age, sizeof(age));
   char sub[32];
   if (c->pr > 0) {
     snprintf(sub, sizeof(sub), "#%d  %s  %s", c->pr, vm_status_glyph(c->status), age);
+  } else if (c->branch[0]) {
+    char br[11];
+    snprintf(br, sizeof(br), "%s", c->branch); // truncate branch to keep room for status/age
+    snprintf(sub, sizeof(sub), "%s  %s  %s", br, vm_status_glyph(c->status), age);
   } else {
     snprintf(sub, sizeof(sub), "%s  %s", vm_status_glyph(c->status), age);
   }
@@ -325,6 +347,7 @@ static void repo_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell
 
 static void repo_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
   if (cell_index->row < s_repos[s_sel_repo].child_count) {
+    s_qr_pending = false; // moving on; drop any outstanding QR request
     show_detail(s_sel_repo, cell_index->row);
   }
 }
@@ -332,7 +355,8 @@ static void repo_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *conte
 static void repo_menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
   Repo *repo = &s_repos[s_sel_repo];
   if (cell_index->row < repo->child_count) {
-    send_request_qr(repo->children[cell_index->row].flat_idx);
+    s_qr_pending = true;
+    send_request_qr(s_children[repo->child_start + cell_index->row].flat_idx);
   }
 }
 
@@ -354,6 +378,7 @@ static void repo_window_load(Window *window) {
 static void repo_window_unload(Window *window) {
   menu_layer_destroy(s_repo_menu);
   s_repo_menu = NULL;
+  s_qr_pending = false; // left the list; ignore a late QR response
 }
 
 static void show_repo(int repo_idx) {
@@ -450,17 +475,25 @@ static void handle_child(DictionaryIterator *iter) {
   Tuple *act = dict_find(iter, MESSAGE_KEY_Action);
   if (!ri || !idx_t || !label || !st || !age) return;
   int r = ri->value->int32;
-  if (r < 0 || r >= MAX_REPOS) return;
-  Repo *repo = &s_repos[r];
-  if (repo->child_count >= MAX_CHILDREN) return;
-  Child *c = &repo->children[repo->child_count++];
+  int fi = idx_t->value->int32;
+  if (r < 0 || r >= MAX_REPOS || fi < 0 || fi >= MAX_BOARD) return;
+  Child *c = &s_children[fi];
   snprintf(c->title, sizeof(c->title), "%s", label->value->cstring);
   c->status = (uint8_t) st->value->int32;
   c->age_s = (uint32_t) age->value->int32;
   c->action = act ? (uint8_t) act->value->int32 : ROW_ACTION_NONE;
-  c->flat_idx = idx_t->value->int32;
+  c->flat_idx = fi;
   Tuple *num = dict_find(iter, MESSAGE_KEY_Num);
   c->pr = num ? num->value->int32 : 0;
+  Tuple *br = dict_find(iter, MESSAGE_KEY_Branch);
+  Tuple *sh = dict_find(iter, MESSAGE_KEY_Sha);
+  Tuple *du = dict_find(iter, MESSAGE_KEY_Dur);
+  snprintf(c->branch, sizeof(c->branch), "%s", br ? br->value->cstring : "");
+  snprintf(c->sha, sizeof(c->sha), "%s", sh ? sh->value->cstring : "");
+  c->dur_s = du ? (uint32_t) du->value->int32 : 0;
+  Repo *repo = &s_repos[r];
+  if (repo->child_count == 0) repo->child_start = (uint8_t) fi;
+  repo->child_count++;
   refresh_menus();
 }
 
@@ -500,6 +533,8 @@ static void handle_auth_error(DictionaryIterator *iter) {
 }
 
 static void handle_qr_data(DictionaryIterator *iter) {
+  if (!s_qr_pending) return; // stale/late response (emulator watch->phone delay) — ignore
+  s_qr_pending = false;
   Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
   Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
   if (!size_tuple || !data_tuple) return;

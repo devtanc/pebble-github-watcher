@@ -12,3 +12,6 @@ const char *vm_status_glyph(uint8_t status);
 
 // A human-readable word for a BuildStatus value (for the detail screen).
 const char *vm_status_word(uint8_t status);
+
+// Format a duration in seconds as "45s", "1m 15s", "2m", "1h 5m".
+void vm_format_dur(uint32_t seconds, char *out, size_t out_len);

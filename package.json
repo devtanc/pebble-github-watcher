@@ -54,7 +54,10 @@
       "Time",
       "Action",
       "RepoIdx",
-      "Num"
+      "Num",
+      "Branch",
+      "Sha",
+      "Dur"
     ],
     "resources": {
       "media": []

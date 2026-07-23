@@ -11,7 +11,10 @@ describe('codec', () => {
   });
 
   test('encodeBoardItem maps all fields onto message keys', () => {
-    const wire = codec.encodeBoardItem({ idx: 1, repoIdx: 2, label: 'CI', status: STATUS.FAILURE, ageS: 120, action: 1, num: 0 });
+    const wire = codec.encodeBoardItem({
+      idx: 1, repoIdx: 2, label: 'CI', status: STATUS.FAILURE, ageS: 120, action: 1, num: 0,
+      branch: 'main', sha: '7363432', durationS: 75,
+    });
     expect(wire).toEqual({
       [KEY.MSG_TYPE]: MSG_TYPE.BOARD_ITEM,
       [KEY.IDX]: 1,
@@ -21,11 +24,17 @@ describe('codec', () => {
       [KEY.AGE_S]: 120,
       [KEY.ACTION]: 1,
       [KEY.NUM]: 0,
+      [KEY.BRANCH]: 'main',
+      [KEY.SHA]: '7363432',
+      [KEY.DUR]: 75,
     });
   });
 
   test('a board item round-trips through encode then decode', () => {
-    const item = { idx: 0, repoIdx: 1, label: 'fix', status: STATUS.SUCCESS, ageS: 45, action: 2, num: 7 };
+    const item = {
+      idx: 0, repoIdx: 1, label: 'fix', status: STATUS.SUCCESS, ageS: 45, action: 2, num: 7,
+      branch: 'main', sha: 'abc1234', durationS: 30,
+    };
     expect(codec.decode(codec.encodeBoardItem(item))).toEqual({ type: 'BOARD_ITEM', ...item });
   });
 
