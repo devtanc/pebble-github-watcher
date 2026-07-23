@@ -16,6 +16,14 @@ const MSG_TYPE = {
   ACTION_RERUN: 9,      // watch -> phone: re-run failed jobs for row Idx
   ACTION_RESULT: 10,    // phone -> watch: action outcome (Ok + Msg)
   WAKEUP: 11,           // phone -> watch: schedule a wakeup at epoch Time (build-done ETA)
+  ACTION_MERGE: 12,     // watch -> phone: merge the PR on row Idx
+};
+
+// The long-press action available on a board row.
+const ROW_ACTION = {
+  NONE: 0,
+  RERUN: 1, // re-run failed jobs (CI row)
+  MERGE: 2, // merge PR (PR row)
 };
 
 // Build status for a board row.
@@ -43,6 +51,7 @@ const KEY = {
   DATA: 'Data',
   OK: 'Ok',
   TIME: 'Time',
+  ACTION: 'Action',
 };
 
-module.exports = { MSG_TYPE, STATUS, KEY };
+module.exports = { MSG_TYPE, STATUS, ROW_ACTION, KEY };

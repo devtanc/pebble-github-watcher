@@ -16,6 +16,12 @@
 #define MSG_TYPE_ACTION_RERUN     9
 #define MSG_TYPE_ACTION_RESULT    10
 #define MSG_TYPE_WAKEUP           11
+#define MSG_TYPE_ACTION_MERGE     12
+
+// Row action codes (BOARD_ITEM Action field) — mirror ROW_ACTION in protocol.js.
+#define ROW_ACTION_NONE  0
+#define ROW_ACTION_RERUN 1
+#define ROW_ACTION_MERGE 2
 
 typedef enum {
   STATUS_UNKNOWN = 0,

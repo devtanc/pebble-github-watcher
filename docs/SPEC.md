@@ -276,17 +276,21 @@ docs/SPEC.md
    `clay-settings`; `DEFAULT_TARGETS` removed → empty-state UI. Verified via seeded Clay settings
    (the tool's `emu-app-config` browser is broken on Python 3.10 — pebble-tool bug, not app code).
 6. ✅ **App Glance:** `glance.js` summarizes the board (failing-first); C persists the text and writes
-   it via `app_glance_reload` on deinit. Verified — launcher shows "Green". *Follow-up: wakeup-refresh
-   for freshness between opens.*
+   it via `app_glance_reload` on deinit. Verified — launcher shows "Green". *Platform limitation
+   (not fixable): the glance reflects the last time the app ran — Pebble wakeups foreground the app and
+   the background worker can't call `app_glance_reload`, so there is no silent between-opens refresh.
+   The M9 build-completion wakeup already refreshes it for the case that matters.*
 7. ✅ **QR bridge:** `qr-encoder.js` (URL→packed bits) + `qr_unpack.c` (bits→grid), wire format
    cross-verified by a shared fixture. SELECT on a board row → `REQUEST_QR` → `QR_DATA` → C draws the
    grid with a quiet zone. Verified live (real run URL rendered, driven via `emu-button`). Finding:
    **watch→phone works on button press** (the earlier init-time failure was timing, not a hard block).
    *TODO: retrofit the Sign-In screen to also show a QR of github.com/login/device.*
-8. ✅ **Actions — re-run failed jobs:** long-press a failed row → confirm → `ACTION_RERUN` →
-   `github-client.rerunFailedJobs` → `ACTION_RESULT` shown on the watch (double-vibe on failure).
-   Verified live via the error path. **Merge-when-green deferred** — needs PR rows on the board (the
-   branch-CI board has no PR context yet); revisit as a board expansion.
+8. ✅ **Actions — re-run failed jobs & merge-when-green:** board rows now carry an `Action` code
+   (from `github-client`); long-press dispatches to the right confirm. Re-run: failed CI row →
+   `rerunFailedJobs`. Merge: PR row (`owner/repo#N`, mergeable_state `clean`) → `mergePr`. Both return
+   `ACTION_RESULT` (double-vibe on failure). Config gained **PR targets** (`owner/repo#123`). Verified
+   live: re-run via the error path; PR row renders green and the "Merge this PR?" confirm shows
+   (not fired — would merge a real PR). Merge PUT logic unit-tested.
 9. ✅ **"Build likely done" alerts:** `timeline-planner.js` estimates completion from the trailing
    average of recent run durations; for in-progress runs pkjs schedules a **local wakeup** on the watch
    (verified live — the wakeup fired, relaunched the app, and buzzed) and best-effort pushes a timeline

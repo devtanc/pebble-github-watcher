@@ -1,5 +1,5 @@
 const { createGithubClient } = require('../../src/pkjs/brain/github-client');
-const { STATUS } = require('../../src/pkjs/brain/protocol');
+const { STATUS, ROW_ACTION } = require('../../src/pkjs/brain/protocol');
 
 const T0 = Date.parse('2026-07-22T00:00:00Z');
 function client(http, now) {
@@ -49,6 +49,46 @@ describe('github-client fetchTarget', () => {
   test('a 401 rejects with auth_required', async () => {
     const http = jest.fn().mockResolvedValue({ status: 401, body: { message: 'Bad credentials' } });
     await expect(client(http).fetchTarget('T', { owner: 'o', repo: 'r' })).rejects.toMatchObject({ code: 'auth_required' });
+  });
+});
+
+describe('github-client PR targets', () => {
+  test('a clean PR maps to a mergeable SUCCESS row with a merge action', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: {
+      state: 'open', mergeable_state: 'clean', updated_at: '2026-07-22T00:00:00Z',
+      html_url: 'https://github.com/o/r/pull/7', number: 7,
+    } });
+    const item = await client(http).fetchTarget('T', { owner: 'o', repo: 'r', pr: 7 });
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/pulls/7');
+    expect(item).toMatchObject({
+      label: 'r#7', status: STATUS.SUCCESS, pr: 7, action: ROW_ACTION.MERGE,
+      url: 'https://github.com/o/r/pull/7',
+    });
+  });
+
+  test('a dirty PR is FAILURE with no action', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: {
+      state: 'open', mergeable_state: 'dirty', updated_at: '2026-07-22T00:00:00Z',
+    } });
+    const item = await client(http).fetchTarget('T', { owner: 'o', repo: 'r', pr: 9 });
+    expect(item.status).toBe(STATUS.FAILURE);
+    expect(item.action).toBe(ROW_ACTION.NONE);
+  });
+});
+
+describe('github-client mergePr', () => {
+  test('PUTs merge and returns ok on 200', async () => {
+    const put = jest.fn().mockResolvedValue({ status: 200, body: { merged: true } });
+    const r = await createGithubClient({ httpPut: put }).mergePr('T', 'o', 'r', 7);
+    expect(put.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/pulls/7/merge');
+    expect(put.mock.calls[0][1].Authorization).toBe('Bearer T');
+    expect(r).toEqual({ ok: true, msg: 'Merged' });
+  });
+
+  test('surfaces the error message on failure', async () => {
+    const put = jest.fn().mockResolvedValue({ status: 405, body: { message: 'Pull Request is not mergeable' } });
+    expect(await createGithubClient({ httpPut: put }).mergePr('T', 'o', 'r', 7))
+      .toEqual({ ok: false, msg: 'Pull Request is not mergeable' });
   });
 });
 

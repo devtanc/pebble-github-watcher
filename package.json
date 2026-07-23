@@ -51,7 +51,8 @@
       "Size",
       "Data",
       "Ok",
-      "Time"
+      "Time",
+      "Action"
     ],
     "resources": {
       "media": []

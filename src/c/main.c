@@ -11,6 +11,7 @@ typedef struct {
   char label[32];
   uint8_t status;
   uint32_t age_s;
+  uint8_t action; // ROW_ACTION_* — long-press action for this row
 } BoardItem;
 
 // Board window
@@ -42,6 +43,7 @@ static Window *s_action_window = NULL;
 static TextLayer *s_action_text_layer = NULL;
 static char s_action_text[96] = "";
 static int s_action_idx = -1;
+static int s_action_kind = 0;  // ROW_ACTION_RERUN or ROW_ACTION_MERGE
 static int s_action_state = 0; // 0 = prompt, 1 = working, 2 = done
 
 // ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
@@ -176,9 +178,11 @@ static void handle_board_item(DictionaryIterator *iter) {
   int count = count_t->value->int32;
   s_count = (count > MAX_ITEMS) ? MAX_ITEMS : (uint8_t) count;
 
+  Tuple *action_t = dict_find(iter, MESSAGE_KEY_Action);
   snprintf(s_items[idx].label, sizeof(s_items[idx].label), "%s", label_t->value->cstring);
   s_items[idx].status = (uint8_t) status_t->value->int32;
   s_items[idx].age_s = (uint32_t) age_t->value->int32;
+  s_items[idx].action = action_t ? (uint8_t) action_t->value->int32 : ROW_ACTION_NONE;
 
   layer_set_hidden(text_layer_get_layer(s_empty_layer), s_count > 0);
   menu_layer_reload_data(s_menu_layer);
@@ -296,12 +300,12 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 
 // ---- Action window (confirm re-run + show result) --------------------------
 
-static void send_action_rerun(int idx) {
+static void send_action(int idx, int kind) {
   DictionaryIterator *out;
   if (app_message_outbox_begin(&out) != APP_MSG_OK) {
     return;
   }
-  int type = MSG_TYPE_ACTION_RERUN;
+  int type = (kind == ROW_ACTION_MERGE) ? MSG_TYPE_ACTION_MERGE : MSG_TYPE_ACTION_RERUN;
   dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
   dict_write_int(out, MESSAGE_KEY_Idx, &idx, sizeof(int), true);
   app_message_outbox_send();
@@ -309,9 +313,10 @@ static void send_action_rerun(int idx) {
 
 static void action_confirm(ClickRecognizerRef recognizer, void *context) {
   if (s_action_state == 0) {
-    send_action_rerun(s_action_idx);
+    send_action(s_action_idx, s_action_kind);
     s_action_state = 1;
-    snprintf(s_action_text, sizeof(s_action_text), "Re-running…");
+    snprintf(s_action_text, sizeof(s_action_text), "%s",
+             (s_action_kind == ROW_ACTION_MERGE) ? "Merging…" : "Re-running…");
     if (s_action_text_layer) {
       text_layer_set_text(s_action_text_layer, s_action_text);
     }
@@ -337,10 +342,12 @@ static void action_unload(Window *window) {
   s_action_text_layer = NULL;
 }
 
-static void show_action(int idx) {
+static void show_action(int idx, int kind) {
   s_action_idx = idx;
+  s_action_kind = kind;
   s_action_state = 0;
-  snprintf(s_action_text, sizeof(s_action_text), "Re-run failed jobs?\n\nSELECT = yes\nBACK = no");
+  snprintf(s_action_text, sizeof(s_action_text), "%s\n\nSELECT = yes\nBACK = no",
+           (kind == ROW_ACTION_MERGE) ? "Merge this PR?" : "Re-run failed jobs?");
   if (!s_action_window) {
     s_action_window = window_create();
     window_set_window_handlers(s_action_window, (WindowHandlers) {
@@ -388,10 +395,14 @@ static void menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
 }
 
 static void menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
-  if (cell_index->row < s_count && s_items[cell_index->row].status == STATUS_FAILURE) {
-    show_action(cell_index->row);
+  if (cell_index->row >= s_count) {
+    return;
+  }
+  uint8_t action = s_items[cell_index->row].action;
+  if (action == ROW_ACTION_RERUN || action == ROW_ACTION_MERGE) {
+    show_action(cell_index->row, action);
   } else {
-    vibes_short_pulse(); // no re-run available for this row
+    vibes_short_pulse(); // no action available for this row
   }
 }
 

@@ -35,6 +35,7 @@ var governor = createRateGovernor({ httpGetJson: http.httpGetJson, storage: loca
 var github = createGithubClient({
   httpGetJson: governor.get,
   httpPostJson: http.httpPostJson,
+  httpPut: http.httpPut,
   now: nowMs,
 });
 
@@ -78,7 +79,25 @@ Pebble.addEventListener('appmessage', function (e) {
   if (msg.type === 'REQUEST_BOARD') loadBoard();
   else if (msg.type === 'REQUEST_QR') sendQr(msg.idx);
   else if (msg.type === 'ACTION_RERUN') doRerun(msg.idx);
+  else if (msg.type === 'ACTION_MERGE') doMerge(msg.idx);
 });
+
+function doMerge(idx) {
+  var item = lastItems[idx];
+  if (!item || !item.pr) {
+    send(codec.encodeActionResult(false, 'No PR'));
+    return;
+  }
+  console.log('merge idx ' + idx + ' ' + item.owner + '/' + item.repo + '#' + item.pr);
+  auth.getAccessToken().then(function (token) {
+    return github.mergePr(token, item.owner, item.repo, item.pr);
+  }).then(function (r) {
+    console.log('merge result: ' + JSON.stringify(r));
+    send(codec.encodeActionResult(r.ok, r.msg));
+  }).catch(function (err) {
+    send(codec.encodeActionResult(false, (err && (err.code || err.message)) || 'failed'));
+  });
+}
 
 function doRerun(idx) {
   var item = lastItems[idx];
@@ -181,7 +200,7 @@ function sendBoard(items) {
     }
     var it = items[i];
     send(codec.encodeBoardItem({
-      idx: i, count: count, label: it.label, status: it.status, ageS: it.ageS,
+      idx: i, count: count, label: it.label, status: it.status, ageS: it.ageS, action: it.action,
     }), function () { next(i + 1); });
   }
   next(0);

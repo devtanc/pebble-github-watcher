@@ -21,12 +21,13 @@ describe('codec', () => {
       [KEY.LABEL]: 'api:main',
       [KEY.STATUS]: STATUS.FAILURE,
       [KEY.AGE_S]: 120,
+      [KEY.ACTION]: 0,
     });
   });
 
   test('a board item round-trips through encode then decode', () => {
     const item = { idx: 0, count: 2, label: 'web:dev', status: STATUS.SUCCESS, ageS: 45 };
-    expect(codec.decode(codec.encodeBoardItem(item))).toEqual({ type: 'BOARD_ITEM', ...item });
+    expect(codec.decode(codec.encodeBoardItem(item))).toEqual({ type: 'BOARD_ITEM', ...item, action: 0 });
   });
 
   test('an unknown message type is surfaced, not thrown', () => {
@@ -84,5 +85,9 @@ describe('codec', () => {
 
   test('wakeup round-trips its epoch time', () => {
     expect(codec.decode(codec.encodeWakeup(1800000000))).toEqual({ type: 'WAKEUP', time: 1800000000 });
+  });
+
+  test('action-merge decodes with its row index', () => {
+    expect(codec.decode(codec.encodeActionMerge(3))).toEqual({ type: 'ACTION_MERGE', idx: 3 });
   });
 });

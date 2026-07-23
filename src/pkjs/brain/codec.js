@@ -15,6 +15,7 @@ function encodeBoardItem(item) {
     [KEY.LABEL]: item.label,
     [KEY.STATUS]: item.status,
     [KEY.AGE_S]: item.ageS,
+    [KEY.ACTION]: item.action || 0,
   };
 }
 
@@ -59,6 +60,10 @@ function encodeWakeup(epochSeconds) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.WAKEUP, [KEY.TIME]: epochSeconds };
 }
 
+function encodeActionMerge(idx) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.ACTION_MERGE, [KEY.IDX]: idx };
+}
+
 function encodeQrData(qr) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
 }
@@ -78,6 +83,7 @@ function decode(payload) {
         label: payload[KEY.LABEL],
         status: payload[KEY.STATUS],
         ageS: payload[KEY.AGE_S],
+        action: payload[KEY.ACTION],
       };
     case MSG_TYPE.SHOW_DEVICE_CODE:
       return {
@@ -103,6 +109,8 @@ function decode(payload) {
       return { type: 'ACTION_RESULT', ok: payload[KEY.OK] === 1, msg: payload[KEY.MSG] };
     case MSG_TYPE.WAKEUP:
       return { type: 'WAKEUP', time: payload[KEY.TIME] };
+    case MSG_TYPE.ACTION_MERGE:
+      return { type: 'ACTION_MERGE', idx: payload[KEY.IDX] };
     default:
       return { type: 'UNKNOWN', raw: payload };
   }
@@ -120,5 +128,6 @@ module.exports = {
   encodeGlance,
   encodeActionResult,
   encodeWakeup,
+  encodeActionMerge,
   decode,
 };

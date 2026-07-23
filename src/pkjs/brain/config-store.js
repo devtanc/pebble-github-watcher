@@ -4,8 +4,24 @@
 // state. Storage is injected for testing.
 'use strict';
 
+function ownerRepo(s) {
+  var slash = s.indexOf('/');
+  if (slash <= 0 || slash >= s.length - 1) return null;
+  var owner = s.slice(0, slash).trim();
+  var repo = s.slice(slash + 1).trim();
+  if (!owner || !repo) return null;
+  return { owner: owner, repo: repo };
+}
+
 function parseOne(token) {
-  // "owner/repo" or "owner/repo:branch"
+  // "owner/repo#123" (a PR), "owner/repo:branch", or "owner/repo"
+  var hash = token.indexOf('#');
+  if (hash !== -1) {
+    var t = ownerRepo(token.slice(0, hash));
+    var pr = parseInt(token.slice(hash + 1).trim(), 10);
+    if (!t || isNaN(pr)) return null;
+    return { owner: t.owner, repo: t.repo, pr: pr };
+  }
   var branch;
   var repoPart = token;
   var colon = token.indexOf(':');
@@ -13,12 +29,9 @@ function parseOne(token) {
     repoPart = token.slice(0, colon);
     branch = token.slice(colon + 1).trim() || undefined;
   }
-  var slash = repoPart.indexOf('/');
-  if (slash <= 0 || slash >= repoPart.length - 1) return null;
-  var owner = repoPart.slice(0, slash).trim();
-  var repo = repoPart.slice(slash + 1).trim();
-  if (!owner || !repo) return null;
-  return { owner: owner, repo: repo, branch: branch };
+  var t2 = ownerRepo(repoPart);
+  if (!t2) return null;
+  return { owner: t2.owner, repo: t2.repo, branch: branch };
 }
 
 function parseRepos(text) {

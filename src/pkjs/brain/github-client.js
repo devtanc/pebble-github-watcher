@@ -2,12 +2,15 @@
 // (now) are injected for testing. No async/await syntax (pkjs bundler limit).
 'use strict';
 
-var STATUS = require('./protocol').STATUS;
+var protocol = require('./protocol');
+var STATUS = protocol.STATUS;
+var ROW_ACTION = protocol.ROW_ACTION;
 var API = 'https://api.github.com';
 
 function createGithubClient(deps) {
   var httpGetJson = deps.httpGetJson;
   var httpPostJson = deps.httpPostJson;
+  var httpPut = deps.httpPut;
   var now = deps.now;
 
   function headersFor(token) {
@@ -16,6 +19,12 @@ function createGithubClient(deps) {
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
+  }
+
+  function authErr() {
+    var err = new Error('auth_required');
+    err.code = 'auth_required';
+    return err;
   }
 
   function runsUrl(target, perPage) {
@@ -43,31 +52,70 @@ function createGithubClient(deps) {
     return target.repo + ':' + branch;
   }
 
-  function ageOf(run) {
-    if (!run || !run.updated_at) return 0;
-    var ms = now() - Date.parse(run.updated_at);
+  function ageFromIso(iso) {
+    if (!iso) return 0;
+    var ms = now() - Date.parse(iso);
     return ms > 0 ? Math.floor(ms / 1000) : 0;
   }
 
-  function fetchTarget(token, target) {
+  function ageOf(run) {
+    return run ? ageFromIso(run.updated_at) : 0;
+  }
+
+  function mapPrStatus(pr) {
+    if (!pr || pr.state !== 'open') return STATUS.UNKNOWN;
+    switch (pr.mergeable_state) {
+      case 'clean': return STATUS.SUCCESS;
+      case 'dirty':
+      case 'blocked':
+      case 'behind': return STATUS.FAILURE;
+      case 'unstable':
+      case 'unknown': return STATUS.IN_PROGRESS;
+      default: return STATUS.UNKNOWN; // draft, etc.
+    }
+  }
+
+  function fetchRun(token, target) {
     return httpGetJson(runsUrl(target), headersFor(token)).then(function (res) {
-      if (res.status === 401) {
-        var err = new Error('auth_required');
-        err.code = 'auth_required';
-        throw err;
-      }
+      if (res.status === 401) throw authErr();
       var runs = (res.body && res.body.workflow_runs) || [];
       var run = runs[0] || null;
+      var status = mapStatus(run);
       return {
         label: labelFor(target, run),
-        status: mapStatus(run),
+        status: status,
         ageS: ageOf(run),
         url: (run && run.html_url) || ('https://github.com/' + target.owner + '/' + target.repo),
         owner: target.owner,
         repo: target.repo,
         runId: run ? run.id : null,
+        pr: null,
+        action: status === STATUS.FAILURE ? ROW_ACTION.RERUN : ROW_ACTION.NONE,
       };
     });
+  }
+
+  function fetchPr(token, target) {
+    var url = API + '/repos/' + target.owner + '/' + target.repo + '/pulls/' + target.pr;
+    return httpGetJson(url, headersFor(token)).then(function (res) {
+      if (res.status === 401) throw authErr();
+      var pr = res.body || {};
+      return {
+        label: target.repo + '#' + target.pr,
+        status: mapPrStatus(pr),
+        ageS: ageFromIso(pr.updated_at),
+        url: pr.html_url || ('https://github.com/' + target.owner + '/' + target.repo + '/pull/' + target.pr),
+        owner: target.owner,
+        repo: target.repo,
+        runId: null,
+        pr: target.pr,
+        action: pr.mergeable_state === 'clean' ? ROW_ACTION.MERGE : ROW_ACTION.NONE,
+      };
+    });
+  }
+
+  function fetchTarget(token, target) {
+    return target.pr ? fetchPr(token, target) : fetchRun(token, target);
   }
 
   function fetchBoard(token, targets) {
@@ -113,11 +161,22 @@ function createGithubClient(deps) {
     });
   }
 
+  // PUT merge. Resolves { ok, msg }; rejects auth_required on 401.
+  function mergePr(token, owner, repo, pr) {
+    var url = API + '/repos/' + owner + '/' + repo + '/pulls/' + pr + '/merge';
+    return httpPut(url, headersFor(token), {}).then(function (res) {
+      if (res.status === 401) throw authErr();
+      if (res.status === 200) return { ok: true, msg: 'Merged' };
+      return { ok: false, msg: (res.body && res.body.message) ? res.body.message : ('HTTP ' + res.status) };
+    });
+  }
+
   return {
     fetchTarget: fetchTarget,
     fetchBoard: fetchBoard,
     fetchRunTimings: fetchRunTimings,
     rerunFailedJobs: rerunFailedJobs,
+    mergePr: mergePr,
   };
 }
 

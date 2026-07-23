@@ -35,6 +35,18 @@ describe('config-store targets', () => {
     expect(cs(store({ repos: 'noslash, /nope, ok/repo, bad/' })).getTargets())
       .toEqual([{ owner: 'ok', repo: 'repo', branch: undefined }]);
   });
+
+  test('parses a PR target (owner/repo#123)', () => {
+    expect(cs(store({ repos: 'devtanc/dynamo-helper#104' })).getTargets())
+      .toEqual([{ owner: 'devtanc', repo: 'dynamo-helper', pr: 104 }]);
+  });
+
+  test('mixes PR and branch targets', () => {
+    expect(cs(store({ repos: 'o/r:main, o/r#7' })).getTargets()).toEqual([
+      { owner: 'o', repo: 'r', branch: 'main' },
+      { owner: 'o', repo: 'r', pr: 7 },
+    ]);
+  });
 });
 
 describe('config-store other settings', () => {
