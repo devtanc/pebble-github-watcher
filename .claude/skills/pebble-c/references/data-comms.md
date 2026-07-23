@@ -80,6 +80,12 @@ Only one outbox transfer is in flight at a time. If `outbox_begin` returns `APP_
 
 Requires `"enableMultiJS": true` in `package.json`. Runs in the phone app's JS sandbox.
 
+> **CRITICAL — the on-device JS runtime is old and NOT modern JS. This is the #1 "works in the emulator, dead on a real phone" trap.** The desktop emulator runs `pypkjs`, which is lenient and provides modern globals; the actual phone app runs a much older engine. Two failure modes bite hard, both invisible on the emulator:
+> - **No native `Promise`.** Real-device PebbleKit JS does not reliably provide `Promise` (or `fetch`). If your code uses Promises/`.then()` chains — even indirectly via a helper that wraps `XMLHttpRequest` in `new Promise(...)` — the **first** Promise use throws `ReferenceError` on the phone. Because that typically happens inside your `ready` / `appmessage` / `showConfiguration` handlers, *all* of them die at once: the watch hangs on its loading screen, the launch handshake gets no reply, **and** the config page never opens — one root cause, three symptoms. **Fix: polyfill `Promise` before anything else runs.** Vendor or `require('promise-polyfill')` and attach it to the global at the very top of `index.js`, guarded by `typeof g.Promise !== 'function'` so it no-ops on the emulator. Get the global robustly (`Function('return this')()` with a `self`/`global`/`window` fallback) — don't assume `window`/`self` exist.
+> - **The pkjs bundler (old webpack) can't parse `async`/`await`.** Use `.then()` chains, not async functions. (ES6 *syntax* that the bundler does accept — computed keys, template literals — is generally fine at runtime; the killer is missing *globals* like `Promise`, not syntax.)
+>
+> Symptom checklist when a real phone does nothing but the emulator works: suspect a missing global (`Promise` first) throwing at handler-registration/first-use time. Confirm with `pebble logs --phone <ip>` — a `ReferenceError` at load names it.
+
 ```js
 // Fires once the JS environment and Bluetooth link are ready.
 Pebble.addEventListener('ready', function() {

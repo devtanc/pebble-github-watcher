@@ -1,5 +1,28 @@
 // Phone-side entry point. Milestone 5: Clay config page drives everything —
 // watched repos, auth, options — with no hardcoded config.
+//
+// FIRST: install a Promise polyfill if the runtime lacks one. Real-device
+// PebbleKit JS does NOT provide a native `Promise`; the emulator's pypkjs does.
+// This whole app is Promise-based (every HTTP call in http.js is `new Promise`,
+// auth/getAccessToken/loadBoard/showConfiguration are all promise chains), so on
+// a phone without this, the very first `Promise.reject`/`new Promise` throws a
+// ReferenceError — the `ready`, `appmessage` (handshake) and `showConfiguration`
+// handlers all die, the watch sits on "Loading…", and Settings never opens. Must
+// run before any module that uses a Promise is required.
+(function () {
+  var g;
+  try { g = Function('return this')(); } catch (e) { g = null; }
+  if (!g) {
+    if (typeof self !== 'undefined') g = self;
+    else if (typeof global !== 'undefined') g = global;
+    else if (typeof window !== 'undefined') g = window;
+  }
+  if (g && typeof g.Promise !== 'function') {
+    var P = require('promise-polyfill');
+    g.Promise = (P && P.default) ? P.default : P;
+  }
+})();
+
 var Clay = require('@rebble/clay');
 var configPage = require('./config-page');
 var createCatalog = require('./brain/catalog').createCatalog;
