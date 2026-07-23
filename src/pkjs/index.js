@@ -276,7 +276,7 @@ function sendBoard(items) {
   repos.forEach(function (r, repoIdx) {
     r.children.forEach(function (c) {
       msgs.push(codec.encodeBoardItem({
-        idx: c.flatIdx, repoIdx: repoIdx, label: c.title, status: c.status, ageS: c.ageS, action: c.action,
+        idx: c.flatIdx, repoIdx: repoIdx, label: c.title, status: c.status, ageS: c.ageS, action: c.action, num: c.pr,
       }));
     });
   });

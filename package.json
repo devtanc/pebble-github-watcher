@@ -53,7 +53,8 @@
       "Ok",
       "Time",
       "Action",
-      "RepoIdx"
+      "RepoIdx",
+      "Num"
     ],
     "resources": {
       "media": []

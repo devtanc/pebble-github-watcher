@@ -103,7 +103,7 @@ function createGithubClient(deps) {
       var pr = res.body || {};
       return {
         label: target.repo + '#' + target.pr,
-        title: '#' + target.pr + ' ' + (pr.title || ''), // level-2 row title
+        title: pr.title || ('#' + target.pr), // level-2 title (number goes to the subtitle)
         status: mapPrStatus(pr),
         ageS: ageFromIso(pr.updated_at),
         url: pr.html_url || ('https://github.com/' + target.owner + '/' + target.repo + '/pull/' + target.pr),

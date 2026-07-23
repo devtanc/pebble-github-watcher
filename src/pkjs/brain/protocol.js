@@ -54,6 +54,7 @@ const KEY = {
   TIME: 'Time',
   ACTION: 'Action',
   REPO_IDX: 'RepoIdx',
+  NUM: 'Num',
 };
 
 module.exports = { MSG_TYPE, STATUS, ROW_ACTION, KEY };

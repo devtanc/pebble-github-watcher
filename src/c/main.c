@@ -14,6 +14,7 @@ typedef struct {
   uint32_t age_s;
   uint8_t action;   // ROW_ACTION_*
   int flat_idx;     // index into pkjs's flat item list (for QR / actions)
+  int pr;           // PR number (0 for CI)
 } Child;
 
 typedef struct {
@@ -269,7 +270,11 @@ static void show_detail(int repo_idx, int child_idx) {
   s_detail_flat_idx = c->flat_idx;
   s_detail_action = c->action;
   s_detail_state = 0;
-  snprintf(s_detail_title, sizeof(s_detail_title), "%s", c->title);
+  if (c->pr > 0) {
+    snprintf(s_detail_title, sizeof(s_detail_title), "#%d %s", c->pr, c->title);
+  } else {
+    snprintf(s_detail_title, sizeof(s_detail_title), "%s", c->title);
+  }
 
   char age[8];
   vm_format_age(c->age_s, age, sizeof(age));
@@ -309,8 +314,12 @@ static void repo_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell
   Child *c = &repo->children[cell_index->row];
   char age[8];
   vm_format_age(c->age_s, age, sizeof(age));
-  char sub[24];
-  snprintf(sub, sizeof(sub), "%s  %s", vm_status_glyph(c->status), age);
+  char sub[32];
+  if (c->pr > 0) {
+    snprintf(sub, sizeof(sub), "#%d  %s  %s", c->pr, vm_status_glyph(c->status), age);
+  } else {
+    snprintf(sub, sizeof(sub), "%s  %s", vm_status_glyph(c->status), age);
+  }
   menu_cell_basic_draw(ctx, cell, c->title, sub, NULL);
 }
 
@@ -450,6 +459,8 @@ static void handle_child(DictionaryIterator *iter) {
   c->age_s = (uint32_t) age->value->int32;
   c->action = act ? (uint8_t) act->value->int32 : ROW_ACTION_NONE;
   c->flat_idx = idx_t->value->int32;
+  Tuple *num = dict_find(iter, MESSAGE_KEY_Num);
+  c->pr = num ? num->value->int32 : 0;
   refresh_menus();
 }
 
