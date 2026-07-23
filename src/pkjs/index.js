@@ -195,22 +195,27 @@ function expandRepo(token, r) {
 function loadBoard() {
   var repos = configStore.getWatchedRepos();
   var manual = configStore.getManualTargets();
-  if (repos.length === 0 && manual.length === 0) {
-    send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'),
-      function () { send(codec.encodeGlance(glance.summarize([]))); });
-    return;
-  }
   var tok;
   var allTargets;
+  // Resolve a token FIRST: a fresh user must be able to sign in before any
+  // repos exist (the config page's repo picker needs a token to populate).
+  // Only after we know we're authenticated do we fall back to the empty state.
   auth.getAccessToken().then(function (token) {
     tok = token;
+    if (repos.length === 0 && manual.length === 0) {
+      send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'),
+        function () { send(codec.encodeGlance(glance.summarize([]))); });
+      return null; // signals the empty-state path to the chained thens
+    }
     return Promise.all(repos.map(function (r) { return expandRepo(token, r); }));
   }).then(function (lists) {
+    if (!lists) return null; // empty state already sent
     allTargets = manual.slice();
     lists.forEach(function (l) { allTargets = allTargets.concat(l); });
     if (allTargets.length > MAX_BOARD) allTargets = allTargets.slice(0, MAX_BOARD);
     return github.fetchBoard(tok, allTargets);
   }).then(function (items) {
+    if (!items) return; // empty-state path
     console.log('board: ' + items.length + ' items, rate remaining: ' + governor.getRemaining());
     sendBoard(items);
     planAlerts(tok, allTargets, items);

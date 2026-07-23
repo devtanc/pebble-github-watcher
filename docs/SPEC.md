@@ -75,7 +75,11 @@ GitHub's OAuth endpoints are blocked by CORS. pkjs runs in the native JS sandbox
 apply, so all device-flow HTTP happens there.
 
 **Flow (`brain/auth.js`):**
-1. Watch shows the **Sign-In** screen when no valid token exists.
+1. Watch shows the **Sign-In** screen when no valid token exists. This is resolved *before* the
+   empty-state check on every board load: an unauthenticated user is taken to Sign-In on launch even
+   with **zero repos configured** — otherwise sign-in would be unreachable, since the config page's
+   repo picker needs a token to populate the catalog (chicken-and-egg). The "No repos yet" empty state
+   is shown only once authenticated.
 2. pkjs `POST https://github.com/login/device/code` (client_id) → `{device_code, user_code,
    verification_uri, interval, expires_in}`.
 3. Watch displays `user_code` as large text **plus a QR** (reusing the QR bridge) to
@@ -264,7 +268,10 @@ docs/SPEC.md
 
 1. ✅ **Skeleton + protocol:** codec (JS+C) with tests; board round-trip on the emulator.
 2. ✅ **Auth:** device flow + refresh (`brain/auth.js`); Sign-In screen (code as text, QR retrofit at
-   the QR milestone); PAT fallback. Verified live against real GitHub.
+   the QR milestone); PAT fallback. Verified live against real GitHub. *Fix: `loadBoard` resolves the
+   token before the empty-state check, so a fresh user with no repos configured reaches Sign-In on
+   launch (previously the "No repos yet" early-return made sign-in unreachable — chicken-and-egg with
+   the token-gated repo picker).*
 3. ✅ **GitHub client:** real Actions status on the board (`brain/github-client.js`,
    `brain/config-store.js`). Verified live.
 4. ✅ **Rate governor:** `rate-governor.js` wraps GETs with ETag conditional requests + budget-aware
