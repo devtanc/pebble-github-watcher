@@ -163,14 +163,23 @@ function createGithubClient(deps) {
 
   // ---- Catalog listing (for the config page's checkbox lists) ----------------
 
+  // All accessible repos, most-recently-updated first. Paginated internally
+  // (100/page) up to a safety cap so >100 repos are still covered.
   function listRepos(token) {
-    return httpGetJson(API + '/user/repos?per_page=100&sort=full_name', headersFor(token)).then(function (res) {
-      if (res.status === 401) throw authErr();
-      var arr = Array.isArray(res.body) ? res.body : [];
-      return arr.map(function (r) {
-        return { owner: r.owner && r.owner.login, repo: r.name };
-      }).filter(function (r) { return r.owner && r.repo; });
-    });
+    var all = [];
+    function page(p) {
+      var url = API + '/user/repos?per_page=100&sort=updated&direction=desc&page=' + p;
+      return httpGetJson(url, headersFor(token)).then(function (res) {
+        if (res.status === 401) throw authErr();
+        var arr = Array.isArray(res.body) ? res.body : [];
+        arr.forEach(function (r) {
+          if (r.owner && r.owner.login && r.name) all.push({ owner: r.owner.login, repo: r.name });
+        });
+        if (arr.length === 100 && p < 5) return page(p + 1);
+        return all;
+      });
+    }
+    return page(1);
   }
 
   function listWorkflows(token, owner, repo) {
@@ -184,8 +193,9 @@ function createGithubClient(deps) {
     });
   }
 
+  // Open PRs, most-recently-updated first, capped at the board size.
   function listOpenPrs(token, owner, repo) {
-    var url = API + '/repos/' + owner + '/' + repo + '/pulls?state=open&per_page=50';
+    var url = API + '/repos/' + owner + '/' + repo + '/pulls?state=open&sort=updated&direction=desc&per_page=16';
     return httpGetJson(url, headersFor(token)).then(function (res) {
       if (res.status === 401) throw authErr();
       var arr = Array.isArray(res.body) ? res.body : [];

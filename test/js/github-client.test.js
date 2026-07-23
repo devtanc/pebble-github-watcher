@@ -100,8 +100,19 @@ describe('github-client catalog listing', () => {
       { name: 'bad' }, // no owner -> dropped
     ] });
     const repos = await client(http).listRepos('T');
-    expect(http.mock.calls[0][0]).toBe('https://api.github.com/user/repos?per_page=100&sort=full_name');
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/user/repos?per_page=100&sort=updated&direction=desc&page=1');
     expect(repos).toEqual([{ owner: 'o', repo: 'a' }, { owner: 'o2', repo: 'b' }]);
+  });
+
+  test('listRepos paginates when a full page comes back', async () => {
+    const full = [];
+    for (let i = 0; i < 100; i++) full.push({ name: 'r' + i, owner: { login: 'o' } });
+    const http = jest.fn()
+      .mockResolvedValueOnce({ status: 200, body: full })
+      .mockResolvedValueOnce({ status: 200, body: [{ name: 'last', owner: { login: 'o' } }] });
+    const repos = await client(http).listRepos('T');
+    expect(http.mock.calls[1][0]).toContain('page=2');
+    expect(repos).toHaveLength(101);
   });
 
   test('listWorkflows maps name + file', async () => {
@@ -119,7 +130,7 @@ describe('github-client catalog listing', () => {
       { number: 7, title: 'Fix bug' }, { number: 9, title: 'Add feature' },
     ] });
     const prs = await client(http).listOpenPrs('T', 'o', 'r');
-    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/pulls?state=open&per_page=50');
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/pulls?state=open&sort=updated&direction=desc&per_page=16');
     expect(prs).toEqual([{ number: 7, title: 'Fix bug' }, { number: 9, title: 'Add feature' }]);
   });
 });

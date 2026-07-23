@@ -31,6 +31,19 @@ describe('config-page build', () => {
     expect(findGroup(cfg, 'refreshCatalog')).toBeTruthy();
   });
 
+  test('paginates repos 20 per page with a page select', () => {
+    const big = { repos: [] };
+    for (let i = 0; i < 25; i++) big.repos.push({ owner: 'o', repo: 'r' + i });
+    expect(findGroup(build(big, [], 1), 'selRepos').options).toHaveLength(20);
+    expect(findGroup(build(big, [], 2), 'selRepos').options).toHaveLength(5);
+    expect(findGroup(build(big, [], 1), 'repoPage')).toBeTruthy();
+    expect(repoList(big, 2)).toHaveLength(5);
+  });
+
+  test('no page select for a single page', () => {
+    expect(findGroup(build(catalog), 'repoPage')).toBeNull();
+  });
+
   test('handles an empty / undefined catalog', () => {
     expect(() => build()).not.toThrow();
     expect(findGroup(build({ repos: [] }), 'selRepos').options).toEqual([]);

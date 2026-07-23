@@ -58,11 +58,13 @@ function writeClaySettings(s) {
 // pushed to the watch), so autoHandleEvents is off and we drive events manually.
 var clay = null;
 var lastCatalog = { repos: [] };
+var lastPage = 1;
 
 function openConfig(catalogData) {
   lastCatalog = catalogData || { repos: [] };
-  var savedRepos = readClaySettings().savedRepos || [];
-  clay = new Clay(configPage.build(lastCatalog, savedRepos), null, { autoHandleEvents: false });
+  var s = readClaySettings();
+  lastPage = Number(s.repoPage) || 1;
+  clay = new Clay(configPage.build(lastCatalog, s.savedRepos || [], lastPage), null, { autoHandleEvents: false });
   Pebble.openURL(clay.generateUrl());
 }
 
@@ -93,7 +95,14 @@ Pebble.addEventListener('webviewclosed', function (e) {
   if (!e || !e.response || !clay) return;
   clay.getSettings(e.response); // persists flattened settings to clay-settings
   var s = readClaySettings();
-  s.savedRepos = resolveChecked(s.selRepos, configPage.repoList(lastCatalog));
+  // Merge this page's checks with selections made on other pages.
+  var pageRepos = configPage.repoList(lastCatalog, lastPage);
+  var checkedThisPage = resolveChecked(s.selRepos, pageRepos);
+  var prev = Array.isArray(s.savedRepos) ? s.savedRepos : [];
+  var keep = prev.filter(function (r) {
+    return !pageRepos.some(function (p) { return p.owner === r.owner && p.repo === r.repo; });
+  });
+  s.savedRepos = keep.concat(checkedThisPage);
   if (s.refreshCatalog) {
     catalog.invalidate(); // force a refetch on next open
     s.refreshCatalog = false;
