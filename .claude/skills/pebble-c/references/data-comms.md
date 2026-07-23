@@ -145,6 +145,14 @@ Pebble.addEventListener('webviewclosed', function(e) {
 
 The **Clay** library (a Pebble package) generates the config page from a JSON schema and handles the round-trip — prefer it for real config UIs. Add it with `pebble package install pebble-clay` and follow its README; it wires `showConfiguration`/`webviewclosed` for you and delivers values as message keys.
 
+**REQUIRED — declare the `configurable` capability.** For the phone app to show the settings gear and open the config page at all, `package.json`'s `pebble` block **must** include:
+
+```json
+"capabilities": ["configurable"]
+```
+
+Without it the JS `showConfiguration` handler never fires — the phone app simply doesn't offer settings. This is easy to miss because the emulator's `pebble emu-app-config` opens the page regardless of the capability (and is itself often broken), so config can appear "done" in testing yet silently fail on real hardware. Verify the capability lands in the built `build/appinfo.json`.
+
 ## Persistent storage (watch-side)
 
 Key-value store on the watch, keyed by `uint32_t`, surviving app exits and watch reboots. ~4KB total per app; each value up to `PERSIST_DATA_MAX_LENGTH` (256 bytes).
@@ -181,5 +189,6 @@ Read persisted state in `init`, write in `deinit` (or on change). Returns defaul
 - `pebble logs --emulator basalt` shows both `APP_LOG` (C) and `console.log` (JS).
 - Emulator has no real Bluetooth/network by default; use `pebble emu-app-config` and note that some XHR endpoints may need a real phone. Test network paths on hardware when possible.
 - If messages don't arrive: verify the key is in `messageKeys`, buffers are large enough, and JS waited for `ready`.
+- **Always register `inbox_dropped` and `outbox_failed`, not just `inbox_received`.** A dropped inbox message (e.g. the payload exceeds the `app_message_open` inbox buffer) and a failed outbox send are otherwise **silent** — the watch shows no error and just sits on its initial/loading screen. The dropped handler logging the `AppMessageResult` reason is often the only way to see a buffer-overflow drop on real hardware. Registering only `inbox_received` is a common, hard-to-debug mistake.
 - **Watch→phone timing (emulator):** an AppMessage sent from C very early (during `window_load` / right after `app_message_open`) can be dropped by the phone simulator (a `QemuInboundPacket.footer` decode exception in the pkjs log). The same send triggered later by a **button press works fine**. So don't rely on the watch *requesting* data at launch — have the phone **push** on `ready` instead; use watch→phone only for user-initiated actions (QR request, re-run, merge). Confirmed on the current emulator; real hardware is more forgiving.
 - **Drive the emulator UI headlessly** with `pebble emu-button click {select|up|down|back}` and capture the result with `pebble screenshot` — lets you verify button-driven flows without touching the GUI.

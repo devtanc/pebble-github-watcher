@@ -605,6 +605,17 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   }
 }
 
+// Without these, a dropped inbox message (e.g. too big for the 512B buffer) or a
+// failed outbox send is silent — the watch just sits on "Loading…" with no clue
+// why. Log the reason so hardware issues are diagnosable from `pebble logs`.
+static void inbox_dropped(AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "inbox dropped: %d", (int) reason);
+}
+
+static void outbox_failed(DictionaryIterator *iter, AppMessageResult reason, void *context) {
+  APP_LOG(APP_LOG_LEVEL_ERROR, "outbox failed: %d", (int) reason);
+}
+
 // ---- App lifecycle ----------------------------------------------------------
 
 static void glance_reload(AppGlanceReloadSession *session, size_t limit, void *context) {
@@ -623,6 +634,8 @@ static void init(void) {
     vibes_double_pulse();
   }
   app_message_register_inbox_received(inbox_received);
+  app_message_register_inbox_dropped(inbox_dropped);
+  app_message_register_outbox_failed(outbox_failed);
   app_message_open(512, 64);
 
   s_main_window = window_create();
