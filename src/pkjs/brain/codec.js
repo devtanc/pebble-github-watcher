@@ -7,11 +7,21 @@ function encodeRequestBoard() {
   return { [KEY.MSG_TYPE]: MSG_TYPE.REQUEST_BOARD };
 }
 
+function encodeBoardRepo(repo) {
+  return {
+    [KEY.MSG_TYPE]: MSG_TYPE.BOARD_REPO,
+    [KEY.REPO_IDX]: repo.repoIdx,
+    [KEY.COUNT]: repo.count,
+    [KEY.LABEL]: repo.name,
+    [KEY.STATUS]: repo.status,
+  };
+}
+
 function encodeBoardItem(item) {
   return {
     [KEY.MSG_TYPE]: MSG_TYPE.BOARD_ITEM,
     [KEY.IDX]: item.idx,
-    [KEY.COUNT]: item.count,
+    [KEY.REPO_IDX]: item.repoIdx || 0,
     [KEY.LABEL]: item.label,
     [KEY.STATUS]: item.status,
     [KEY.AGE_S]: item.ageS,
@@ -75,11 +85,19 @@ function decode(payload) {
   switch (payload[KEY.MSG_TYPE]) {
     case MSG_TYPE.REQUEST_BOARD:
       return { type: 'REQUEST_BOARD' };
+    case MSG_TYPE.BOARD_REPO:
+      return {
+        type: 'BOARD_REPO',
+        repoIdx: payload[KEY.REPO_IDX],
+        count: payload[KEY.COUNT],
+        name: payload[KEY.LABEL],
+        status: payload[KEY.STATUS],
+      };
     case MSG_TYPE.BOARD_ITEM:
       return {
         type: 'BOARD_ITEM',
         idx: payload[KEY.IDX],
-        count: payload[KEY.COUNT],
+        repoIdx: payload[KEY.REPO_IDX],
         label: payload[KEY.LABEL],
         status: payload[KEY.STATUS],
         ageS: payload[KEY.AGE_S],
@@ -118,6 +136,7 @@ function decode(payload) {
 
 module.exports = {
   encodeRequestBoard,
+  encodeBoardRepo,
   encodeBoardItem,
   encodeShowDeviceCode,
   encodeAuthOk,

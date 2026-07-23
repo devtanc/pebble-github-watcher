@@ -17,6 +17,7 @@ const MSG_TYPE = {
   ACTION_RESULT: 10,    // phone -> watch: action outcome (Ok + Msg)
   WAKEUP: 11,           // phone -> watch: schedule a wakeup at epoch Time (build-done ETA)
   ACTION_MERGE: 12,     // watch -> phone: merge the PR on row Idx
+  BOARD_REPO: 13,       // phone -> watch: a repo group (RepoIdx, name, aggregate status)
 };
 
 // The long-press action available on a board row.
@@ -52,6 +53,7 @@ const KEY = {
   OK: 'Ok',
   TIME: 'Time',
   ACTION: 'Action',
+  REPO_IDX: 'RepoIdx',
 };
 
 module.exports = { MSG_TYPE, STATUS, ROW_ACTION, KEY };

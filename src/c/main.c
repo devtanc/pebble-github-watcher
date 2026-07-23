@@ -4,23 +4,46 @@
 #include "lib/view_model.h"
 #include "lib/qr_unpack.h"
 
-#define MAX_ITEMS 16
+#define MAX_REPOS 16
+#define MAX_CHILDREN 12
 #define PERSIST_KEY_GLANCE 1
 
 typedef struct {
-  char label[32];
+  char title[40];
   uint8_t status;
   uint32_t age_s;
-  uint8_t action; // ROW_ACTION_* — long-press action for this row
-} BoardItem;
+  uint8_t action;   // ROW_ACTION_*
+  int flat_idx;     // index into pkjs's flat item list (for QR / actions)
+} Child;
 
-// Board window
-static Window *s_main_window;
-static MenuLayer *s_menu_layer;
-static TextLayer *s_empty_layer;
-static BoardItem s_items[MAX_ITEMS];
-static uint8_t s_count = 0;
+typedef struct {
+  char name[32];
+  uint8_t status;   // aggregate
+  uint8_t child_count;
+  Child children[MAX_CHILDREN];
+} Repo;
+
+static Repo s_repos[MAX_REPOS];
+static uint8_t s_repo_count = 0;
+static int s_sel_repo = 0;   // repo currently drilled into
 static char s_status_text[96] = "Loading…";
+
+// ---- Windows ---------------------------------------------------------------
+static Window *s_main_window;      // level 1: repos
+static MenuLayer *s_main_menu;
+static TextLayer *s_status_layer;  // empty / error state on the main window
+
+static Window *s_repo_window = NULL;   // level 2: a repo's items
+static MenuLayer *s_repo_menu = NULL;
+
+static Window *s_detail_window = NULL;  // level 3: item detail + action
+static TextLayer *s_detail_title_layer = NULL;
+static TextLayer *s_detail_status_layer = NULL;
+static char s_detail_title[64] = "";
+static char s_detail_status[96] = "";
+static int s_detail_flat_idx = -1;
+static uint8_t s_detail_action = ROW_ACTION_NONE;
+static int s_detail_state = 0; // 0 view, 1 confirm-merge, 2 working, 3 done
 
 // Sign-in window
 static Window *s_signin_window = NULL;
@@ -38,14 +61,6 @@ static Layer *s_qr_layer;
 static uint8_t s_qr_bytes[512];
 static int s_qr_size = 0;
 
-// Action window (confirm re-run, then show result)
-static Window *s_action_window = NULL;
-static TextLayer *s_action_text_layer = NULL;
-static char s_action_text[96] = "";
-static int s_action_idx = -1;
-static int s_action_kind = 0;  // ROW_ACTION_RERUN or ROW_ACTION_MERGE
-static int s_action_state = 0; // 0 = prompt, 1 = working, 2 = done
-
 // ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
 
 static void draw_qr(GContext *ctx, GRect area, const uint8_t *bytes, int size) {
@@ -54,7 +69,7 @@ static void draw_qr(GContext *ctx, GRect area, const uint8_t *bytes, int size) {
   if (size <= 0) {
     return;
   }
-  const int quiet = 4; // quiet-zone modules per side (needed for scanning)
+  const int quiet = 4;
   int total = size + quiet * 2;
   int mindim = area.size.w < area.size.h ? area.size.w : area.size.h;
   int scale = mindim / total;
@@ -115,7 +130,6 @@ static void show_signin(void) {
   if (window_stack_get_top_window() != s_signin_window) {
     window_stack_push(s_signin_window, true);
   } else {
-    // Already visible — just refresh the on-screen content.
     text_layer_set_text(s_signin_code, s_user_code);
     text_layer_set_text(s_signin_instr, s_instr_text);
     layer_mark_dirty(s_signin_qr_layer);
@@ -160,32 +174,294 @@ static void show_qr(void) {
   }
 }
 
+// ---- Outbound (watch -> phone) ----------------------------------------------
+
+static void send_request_qr(int flat_idx) {
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
+  int type = MSG_TYPE_REQUEST_QR;
+  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
+  dict_write_int(out, MESSAGE_KEY_Idx, &flat_idx, sizeof(int), true);
+  app_message_outbox_send();
+}
+
+static void send_action(int flat_idx, int kind) {
+  DictionaryIterator *out;
+  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
+  int type = (kind == ROW_ACTION_MERGE) ? MSG_TYPE_ACTION_MERGE : MSG_TYPE_ACTION_RERUN;
+  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
+  dict_write_int(out, MESSAGE_KEY_Idx, &flat_idx, sizeof(int), true);
+  app_message_outbox_send();
+}
+
+// ---- Level 3: item detail (folds the action confirm/result) -----------------
+
+static void detail_render(void) {
+  if (s_detail_state == 1) {
+    snprintf(s_detail_status, sizeof(s_detail_status), "Merge this PR?\n\nSELECT = yes\nBACK = no");
+  } else if (s_detail_state == 2) {
+    snprintf(s_detail_status, sizeof(s_detail_status), "%s",
+             (s_detail_action == ROW_ACTION_MERGE) ? "Merging…" : "Re-running…");
+  }
+  // state 0 (view) and 3 (done) set s_detail_status elsewhere (show_detail / result).
+  if (s_detail_status_layer) {
+    text_layer_set_text(s_detail_status_layer, s_detail_status);
+  }
+}
+
+static void detail_select(ClickRecognizerRef recognizer, void *context) {
+  if (s_detail_state == 0) {
+    if (s_detail_action == ROW_ACTION_RERUN) {
+      send_action(s_detail_flat_idx, ROW_ACTION_RERUN);
+      s_detail_state = 2;
+      detail_render();
+    } else if (s_detail_action == ROW_ACTION_MERGE) {
+      s_detail_state = 1; // ask for confirmation
+      detail_render();
+    }
+  } else if (s_detail_state == 1) {
+    send_action(s_detail_flat_idx, ROW_ACTION_MERGE);
+    s_detail_state = 2;
+    detail_render();
+  }
+}
+
+static void detail_back(ClickRecognizerRef recognizer, void *context) {
+  if (s_detail_state == 1) {
+    s_detail_state = 0; // cancel the merge confirm, back to view
+    snprintf(s_detail_status, sizeof(s_detail_status), "SELECT to merge");
+    detail_render();
+  } else {
+    window_stack_pop(true);
+  }
+}
+
+static void detail_click_config(void *context) {
+  window_single_click_subscribe(BUTTON_ID_SELECT, detail_select);
+  window_single_click_subscribe(BUTTON_ID_BACK, detail_back);
+}
+
+static void detail_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect b = layer_get_bounds(root);
+  s_detail_title_layer = text_layer_create(GRect(4, 4, b.size.w - 8, 66));
+  text_layer_set_font(s_detail_title_layer, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD));
+  text_layer_set_overflow_mode(s_detail_title_layer, GTextOverflowModeWordWrap);
+  text_layer_set_text(s_detail_title_layer, s_detail_title);
+  layer_add_child(root, text_layer_get_layer(s_detail_title_layer));
+
+  s_detail_status_layer = text_layer_create(GRect(4, 74, b.size.w - 8, b.size.h - 78));
+  text_layer_set_text_alignment(s_detail_status_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_detail_status_layer, GTextOverflowModeWordWrap);
+  text_layer_set_text(s_detail_status_layer, s_detail_status);
+  layer_add_child(root, text_layer_get_layer(s_detail_status_layer));
+}
+
+static void detail_unload(Window *window) {
+  text_layer_destroy(s_detail_title_layer);
+  text_layer_destroy(s_detail_status_layer);
+  s_detail_title_layer = NULL;
+  s_detail_status_layer = NULL;
+}
+
+static void show_detail(int repo_idx, int child_idx) {
+  Child *c = &s_repos[repo_idx].children[child_idx];
+  s_detail_flat_idx = c->flat_idx;
+  s_detail_action = c->action;
+  s_detail_state = 0;
+  snprintf(s_detail_title, sizeof(s_detail_title), "%s", c->title);
+
+  char age[8];
+  vm_format_age(c->age_s, age, sizeof(age));
+  const char *prompt = "";
+  if (c->action == ROW_ACTION_MERGE) prompt = "\n\nSELECT to merge";
+  else if (c->action == ROW_ACTION_RERUN) prompt = "\n\nSELECT to re-run";
+  snprintf(s_detail_status, sizeof(s_detail_status), "%s · %s%s", vm_status_word(c->status), age, prompt);
+
+  if (!s_detail_window) {
+    s_detail_window = window_create();
+    window_set_window_handlers(s_detail_window, (WindowHandlers) {
+      .load = detail_load,
+      .unload = detail_unload,
+    });
+    window_set_click_config_provider(s_detail_window, detail_click_config);
+  }
+  window_stack_push(s_detail_window, true);
+}
+
+// ---- Level 2: a repo's items ------------------------------------------------
+
+static uint16_t repo_menu_num_rows(MenuLayer *menu, uint16_t section, void *context) {
+  return s_repos[s_sel_repo].child_count;
+}
+
+static int16_t repo_menu_header_height(MenuLayer *menu, uint16_t section, void *context) {
+  return MENU_CELL_BASIC_HEADER_HEIGHT;
+}
+
+static void repo_menu_draw_header(GContext *ctx, const Layer *cell, uint16_t section, void *context) {
+  menu_cell_basic_header_draw(ctx, cell, s_repos[s_sel_repo].name);
+}
+
+static void repo_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell_index, void *context) {
+  Repo *repo = &s_repos[s_sel_repo];
+  if (cell_index->row >= repo->child_count) return;
+  Child *c = &repo->children[cell_index->row];
+  char age[8];
+  vm_format_age(c->age_s, age, sizeof(age));
+  char sub[24];
+  snprintf(sub, sizeof(sub), "%s  %s", vm_status_glyph(c->status), age);
+  menu_cell_basic_draw(ctx, cell, c->title, sub, NULL);
+}
+
+static void repo_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
+  if (cell_index->row < s_repos[s_sel_repo].child_count) {
+    show_detail(s_sel_repo, cell_index->row);
+  }
+}
+
+static void repo_menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
+  Repo *repo = &s_repos[s_sel_repo];
+  if (cell_index->row < repo->child_count) {
+    send_request_qr(repo->children[cell_index->row].flat_idx);
+  }
+}
+
+static void repo_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  s_repo_menu = menu_layer_create(layer_get_bounds(root));
+  menu_layer_set_callbacks(s_repo_menu, NULL, (MenuLayerCallbacks) {
+    .get_num_rows = repo_menu_num_rows,
+    .get_header_height = repo_menu_header_height,
+    .draw_header = repo_menu_draw_header,
+    .draw_row = repo_menu_draw_row,
+    .select_click = repo_menu_select,
+    .select_long_click = repo_menu_select_long,
+  });
+  menu_layer_set_click_config_onto_window(s_repo_menu, window);
+  layer_add_child(root, menu_layer_get_layer(s_repo_menu));
+}
+
+static void repo_window_unload(Window *window) {
+  menu_layer_destroy(s_repo_menu);
+  s_repo_menu = NULL;
+}
+
+static void show_repo(int repo_idx) {
+  s_sel_repo = repo_idx;
+  if (!s_repo_window) {
+    s_repo_window = window_create();
+    window_set_window_handlers(s_repo_window, (WindowHandlers) {
+      .load = repo_window_load,
+      .unload = repo_window_unload,
+    });
+  }
+  window_stack_push(s_repo_window, true);
+}
+
+// ---- Level 1: repos ---------------------------------------------------------
+
+static uint16_t main_menu_num_rows(MenuLayer *menu, uint16_t section, void *context) {
+  return s_repo_count;
+}
+
+static void main_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell_index, void *context) {
+  if (cell_index->row >= s_repo_count) return;
+  Repo *r = &s_repos[cell_index->row];
+  char sub[24];
+  snprintf(sub, sizeof(sub), "%s  %d item%s", vm_status_glyph(r->status), r->child_count,
+           r->child_count == 1 ? "" : "s");
+  menu_cell_basic_draw(ctx, cell, r->name, sub, NULL);
+}
+
+static void main_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
+  if (cell_index->row < s_repo_count) {
+    show_repo(cell_index->row);
+  }
+}
+
+static void main_window_load(Window *window) {
+  Layer *root = window_get_root_layer(window);
+  GRect bounds = layer_get_bounds(root);
+
+  s_main_menu = menu_layer_create(bounds);
+  menu_layer_set_callbacks(s_main_menu, NULL, (MenuLayerCallbacks) {
+    .get_num_rows = main_menu_num_rows,
+    .draw_row = main_menu_draw_row,
+    .select_click = main_menu_select,
+  });
+  menu_layer_set_click_config_onto_window(s_main_menu, window);
+  layer_add_child(root, menu_layer_get_layer(s_main_menu));
+
+  s_status_layer = text_layer_create(GRect(4, bounds.size.h / 2 - 32, bounds.size.w - 8, 64));
+  text_layer_set_text(s_status_layer, s_status_text);
+  text_layer_set_text_alignment(s_status_layer, GTextAlignmentCenter);
+  text_layer_set_overflow_mode(s_status_layer, GTextOverflowModeWordWrap);
+  layer_set_hidden(text_layer_get_layer(s_status_layer), s_repo_count > 0);
+  layer_add_child(root, text_layer_get_layer(s_status_layer));
+}
+
+static void main_window_unload(Window *window) {
+  text_layer_destroy(s_status_layer);
+  menu_layer_destroy(s_main_menu);
+}
+
+static void refresh_menus(void) {
+  if (s_main_menu) menu_layer_reload_data(s_main_menu);
+  if (s_repo_menu) menu_layer_reload_data(s_repo_menu);
+}
+
 // ---- Incoming messages (phone -> watch) ------------------------------------
 
-static void handle_board_item(DictionaryIterator *iter) {
+static void handle_board_repo(DictionaryIterator *iter) {
+  Tuple *ri = dict_find(iter, MESSAGE_KEY_RepoIdx);
+  Tuple *cnt = dict_find(iter, MESSAGE_KEY_Count);
+  Tuple *name = dict_find(iter, MESSAGE_KEY_Label);
+  Tuple *st = dict_find(iter, MESSAGE_KEY_Status);
+  if (!ri || !name || !st) return;
+  int i = ri->value->int32;
+  if (i < 0 || i >= MAX_REPOS) return;
+  if (cnt) {
+    int c = cnt->value->int32;
+    s_repo_count = (c > MAX_REPOS) ? MAX_REPOS : (uint8_t) c;
+  }
+  snprintf(s_repos[i].name, sizeof(s_repos[i].name), "%s", name->value->cstring);
+  s_repos[i].status = (uint8_t) st->value->int32;
+  s_repos[i].child_count = 0; // children arrive after all repos
+  layer_set_hidden(text_layer_get_layer(s_status_layer), s_repo_count > 0);
+  refresh_menus();
+}
+
+static void handle_child(DictionaryIterator *iter) {
+  Tuple *ri = dict_find(iter, MESSAGE_KEY_RepoIdx);
   Tuple *idx_t = dict_find(iter, MESSAGE_KEY_Idx);
-  Tuple *count_t = dict_find(iter, MESSAGE_KEY_Count);
-  Tuple *label_t = dict_find(iter, MESSAGE_KEY_Label);
-  Tuple *status_t = dict_find(iter, MESSAGE_KEY_Status);
-  Tuple *age_t = dict_find(iter, MESSAGE_KEY_AgeS);
-  if (!idx_t || !count_t || !label_t || !status_t || !age_t) {
-    return;
-  }
-  int idx = idx_t->value->int32;
-  if (idx < 0 || idx >= MAX_ITEMS) {
-    return;
-  }
-  int count = count_t->value->int32;
-  s_count = (count > MAX_ITEMS) ? MAX_ITEMS : (uint8_t) count;
+  Tuple *label = dict_find(iter, MESSAGE_KEY_Label);
+  Tuple *st = dict_find(iter, MESSAGE_KEY_Status);
+  Tuple *age = dict_find(iter, MESSAGE_KEY_AgeS);
+  Tuple *act = dict_find(iter, MESSAGE_KEY_Action);
+  if (!ri || !idx_t || !label || !st || !age) return;
+  int r = ri->value->int32;
+  if (r < 0 || r >= MAX_REPOS) return;
+  Repo *repo = &s_repos[r];
+  if (repo->child_count >= MAX_CHILDREN) return;
+  Child *c = &repo->children[repo->child_count++];
+  snprintf(c->title, sizeof(c->title), "%s", label->value->cstring);
+  c->status = (uint8_t) st->value->int32;
+  c->age_s = (uint32_t) age->value->int32;
+  c->action = act ? (uint8_t) act->value->int32 : ROW_ACTION_NONE;
+  c->flat_idx = idx_t->value->int32;
+  refresh_menus();
+}
 
-  Tuple *action_t = dict_find(iter, MESSAGE_KEY_Action);
-  snprintf(s_items[idx].label, sizeof(s_items[idx].label), "%s", label_t->value->cstring);
-  s_items[idx].status = (uint8_t) status_t->value->int32;
-  s_items[idx].age_s = (uint32_t) age_t->value->int32;
-  s_items[idx].action = action_t ? (uint8_t) action_t->value->int32 : ROW_ACTION_NONE;
-
-  layer_set_hidden(text_layer_get_layer(s_empty_layer), s_count > 0);
-  menu_layer_reload_data(s_menu_layer);
+static void handle_status(DictionaryIterator *iter) {
+  Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
+  if (msg_t) {
+    snprintf(s_status_text, sizeof(s_status_text), "%s", msg_t->value->cstring);
+    text_layer_set_text(s_status_layer, s_status_text);
+  }
+  s_repo_count = 0;
+  layer_set_hidden(text_layer_get_layer(s_status_layer), false);
+  refresh_menus();
 }
 
 static void handle_show_device_code(DictionaryIterator *iter) {
@@ -197,25 +473,12 @@ static void handle_show_device_code(DictionaryIterator *iter) {
   Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
   if (size_tuple && data_tuple) {
     uint16_t len = data_tuple->length;
-    if (len > sizeof(s_signin_qr_bytes)) {
-      len = sizeof(s_signin_qr_bytes);
-    }
+    if (len > sizeof(s_signin_qr_bytes)) len = sizeof(s_signin_qr_bytes);
     memcpy(s_signin_qr_bytes, data_tuple->value->data, len);
     s_signin_qr_size = size_tuple->value->int32;
   }
   snprintf(s_instr_text, sizeof(s_instr_text), "github.com/login/device");
   show_signin();
-}
-
-static void handle_status(DictionaryIterator *iter) {
-  Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
-  if (msg_t) {
-    snprintf(s_status_text, sizeof(s_status_text), "%s", msg_t->value->cstring);
-    text_layer_set_text(s_empty_layer, s_status_text);
-  }
-  s_count = 0;
-  layer_set_hidden(text_layer_get_layer(s_empty_layer), false);
-  menu_layer_reload_data(s_menu_layer);
 }
 
 static void handle_auth_error(DictionaryIterator *iter) {
@@ -225,39 +488,33 @@ static void handle_auth_error(DictionaryIterator *iter) {
   show_signin();
 }
 
+static void handle_qr_data(DictionaryIterator *iter) {
+  Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
+  Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
+  if (!size_tuple || !data_tuple) return;
+  uint16_t len = data_tuple->length;
+  if (len > sizeof(s_qr_bytes)) len = sizeof(s_qr_bytes);
+  memcpy(s_qr_bytes, data_tuple->value->data, len);
+  s_qr_size = size_tuple->value->int32;
+  show_qr();
+}
+
 static void handle_glance(DictionaryIterator *iter) {
-  // Persist the launcher subtitle; it is applied on deinit (glance can only be
-  // written by the foreground app, so we set it as the app closes).
   Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
   if (msg_t) {
     persist_write_string(PERSIST_KEY_GLANCE, msg_t->value->cstring);
   }
 }
 
-static void handle_qr_data(DictionaryIterator *iter) {
-  Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
-  Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
-  if (!size_tuple || !data_tuple) {
-    return;
-  }
-  uint16_t len = data_tuple->length;
-  if (len > sizeof(s_qr_bytes)) {
-    len = sizeof(s_qr_bytes);
-  }
-  memcpy(s_qr_bytes, data_tuple->value->data, len);
-  s_qr_size = size_tuple->value->int32;
-  show_qr();
-}
-
 static void handle_action_result(DictionaryIterator *iter) {
   Tuple *ok_t = dict_find(iter, MESSAGE_KEY_Ok);
   Tuple *msg_t = dict_find(iter, MESSAGE_KEY_Msg);
   bool ok = ok_t && ok_t->value->int32 == 1;
-  s_action_state = 2;
-  snprintf(s_action_text, sizeof(s_action_text), "%s",
+  s_detail_state = 3;
+  snprintf(s_detail_status, sizeof(s_detail_status), "%s",
            msg_t ? msg_t->value->cstring : (ok ? "Done" : "Failed"));
-  if (s_action_text_layer) {
-    text_layer_set_text(s_action_text_layer, s_action_text);
+  if (s_detail_status_layer) {
+    text_layer_set_text(s_detail_status_layer, s_detail_status);
   }
   if (ok) {
     vibes_short_pulse();
@@ -268,24 +525,19 @@ static void handle_action_result(DictionaryIterator *iter) {
 
 static void handle_wakeup(DictionaryIterator *iter) {
   Tuple *time_tuple = dict_find(iter, MESSAGE_KEY_Time);
-  if (!time_tuple) {
-    return;
-  }
+  if (!time_tuple) return;
   time_t when = (time_t) time_tuple->value->int32;
-  if (when <= time(NULL) + 60) {
-    return; // too soon or in the past to schedule
-  }
+  if (when <= time(NULL) + 60) return;
   wakeup_cancel_all();
-  wakeup_schedule(when, 0, true); // notify_if_missed
+  wakeup_schedule(when, 0, true);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *type_t = dict_find(iter, MESSAGE_KEY_MsgType);
-  if (!type_t) {
-    return;
-  }
+  if (!type_t) return;
   switch (type_t->value->int32) {
-    case MSG_TYPE_BOARD_ITEM:       handle_board_item(iter); break;
+    case MSG_TYPE_BOARD_REPO:       handle_board_repo(iter); break;
+    case MSG_TYPE_BOARD_ITEM:       handle_child(iter); break;
     case MSG_TYPE_SHOW_DEVICE_CODE: handle_show_device_code(iter); break;
     case MSG_TYPE_AUTH_OK:          hide_signin(); break;
     case MSG_TYPE_AUTH_ERROR:       handle_auth_error(iter); break;
@@ -298,146 +550,22 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   }
 }
 
-// ---- Action window (confirm re-run + show result) --------------------------
-
-static void send_action(int idx, int kind) {
-  DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) != APP_MSG_OK) {
-    return;
-  }
-  int type = (kind == ROW_ACTION_MERGE) ? MSG_TYPE_ACTION_MERGE : MSG_TYPE_ACTION_RERUN;
-  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
-  dict_write_int(out, MESSAGE_KEY_Idx, &idx, sizeof(int), true);
-  app_message_outbox_send();
-}
-
-static void action_confirm(ClickRecognizerRef recognizer, void *context) {
-  if (s_action_state == 0) {
-    send_action(s_action_idx, s_action_kind);
-    s_action_state = 1;
-    snprintf(s_action_text, sizeof(s_action_text), "%s",
-             (s_action_kind == ROW_ACTION_MERGE) ? "Merging…" : "Re-running…");
-    if (s_action_text_layer) {
-      text_layer_set_text(s_action_text_layer, s_action_text);
-    }
-  }
-}
-
-static void action_click_config(void *context) {
-  window_single_click_subscribe(BUTTON_ID_SELECT, action_confirm);
-}
-
-static void action_load(Window *window) {
-  Layer *root = window_get_root_layer(window);
-  GRect b = layer_get_bounds(root);
-  s_action_text_layer = text_layer_create(GRect(6, b.size.h / 2 - 42, b.size.w - 12, 84));
-  text_layer_set_text_alignment(s_action_text_layer, GTextAlignmentCenter);
-  text_layer_set_overflow_mode(s_action_text_layer, GTextOverflowModeWordWrap);
-  text_layer_set_text(s_action_text_layer, s_action_text);
-  layer_add_child(root, text_layer_get_layer(s_action_text_layer));
-}
-
-static void action_unload(Window *window) {
-  text_layer_destroy(s_action_text_layer);
-  s_action_text_layer = NULL;
-}
-
-static void show_action(int idx, int kind) {
-  s_action_idx = idx;
-  s_action_kind = kind;
-  s_action_state = 0;
-  snprintf(s_action_text, sizeof(s_action_text), "%s\n\nSELECT = yes\nBACK = no",
-           (kind == ROW_ACTION_MERGE) ? "Merge this PR?" : "Re-run failed jobs?");
-  if (!s_action_window) {
-    s_action_window = window_create();
-    window_set_window_handlers(s_action_window, (WindowHandlers) {
-      .load = action_load,
-      .unload = action_unload,
-    });
-    window_set_click_config_provider(s_action_window, action_click_config);
-  }
-  window_stack_push(s_action_window, true);
-}
-
-// ---- Board window / MenuLayer ----------------------------------------------
-
-static uint16_t menu_get_num_rows(MenuLayer *menu, uint16_t section, void *context) {
-  return s_count;
-}
-
-static void menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell_index, void *context) {
-  if (cell_index->row >= s_count) {
-    return;
-  }
-  BoardItem *it = &s_items[cell_index->row];
-  char age[8];
-  vm_format_age(it->age_s, age, sizeof(age));
-  char subtitle[24];
-  snprintf(subtitle, sizeof(subtitle), "%s  %s", vm_status_glyph(it->status), age);
-  menu_cell_basic_draw(ctx, cell, it->label, subtitle, NULL);
-}
-
-static void send_request_qr(int idx) {
-  DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) != APP_MSG_OK) {
-    return;
-  }
-  int type = MSG_TYPE_REQUEST_QR;
-  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
-  dict_write_int(out, MESSAGE_KEY_Idx, &idx, sizeof(int), true);
-  app_message_outbox_send();
-}
-
-static void menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
-  if (cell_index->row < s_count) {
-    send_request_qr(cell_index->row);
-  }
-}
-
-static void menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
-  if (cell_index->row >= s_count) {
-    return;
-  }
-  uint8_t action = s_items[cell_index->row].action;
-  if (action == ROW_ACTION_RERUN || action == ROW_ACTION_MERGE) {
-    show_action(cell_index->row, action);
-  } else {
-    vibes_short_pulse(); // no action available for this row
-  }
-}
-
-static void main_window_load(Window *window) {
-  Layer *root = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(root);
-
-  s_menu_layer = menu_layer_create(bounds);
-  menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
-    .get_num_rows = menu_get_num_rows,
-    .draw_row = menu_draw_row,
-    .select_click = menu_select,
-    .select_long_click = menu_select_long,
-  });
-  menu_layer_set_click_config_onto_window(s_menu_layer, window);
-  layer_add_child(root, menu_layer_get_layer(s_menu_layer));
-
-  s_empty_layer = text_layer_create(GRect(4, bounds.size.h / 2 - 32, bounds.size.w - 8, 64));
-  text_layer_set_text(s_empty_layer, s_status_text);
-  text_layer_set_text_alignment(s_empty_layer, GTextAlignmentCenter);
-  text_layer_set_overflow_mode(s_empty_layer, GTextOverflowModeWordWrap);
-  layer_add_child(root, text_layer_get_layer(s_empty_layer));
-}
-
-static void main_window_unload(Window *window) {
-  text_layer_destroy(s_empty_layer);
-  menu_layer_destroy(s_menu_layer);
-}
-
 // ---- App lifecycle ----------------------------------------------------------
+
+static void glance_reload(AppGlanceReloadSession *session, size_t limit, void *context) {
+  if (limit < 1 || !persist_exists(PERSIST_KEY_GLANCE)) return;
+  char subtitle[64];
+  persist_read_string(PERSIST_KEY_GLANCE, subtitle, sizeof(subtitle));
+  const AppGlanceSlice slice = {
+    .layout = { .icon = APP_GLANCE_SLICE_DEFAULT_ICON, .subtitle_template_string = subtitle },
+    .expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION,
+  };
+  app_glance_add_slice(session, slice);
+}
 
 static void init(void) {
   if (launch_reason() == APP_LAUNCH_WAKEUP) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "woke via wakeup");
-    vibes_double_pulse(); // woke at the estimated build-done time
+    vibes_double_pulse();
   }
   app_message_register_inbox_received(inbox_received);
   app_message_open(512, 64);
@@ -450,33 +578,12 @@ static void init(void) {
   window_stack_push(s_main_window, true);
 }
 
-static void glance_reload(AppGlanceReloadSession *session, size_t limit, void *context) {
-  if (limit < 1 || !persist_exists(PERSIST_KEY_GLANCE)) {
-    return;
-  }
-  char subtitle[64];
-  persist_read_string(PERSIST_KEY_GLANCE, subtitle, sizeof(subtitle));
-  const AppGlanceSlice slice = {
-    .layout = {
-      .icon = APP_GLANCE_SLICE_DEFAULT_ICON,
-      .subtitle_template_string = subtitle,
-    },
-    .expiration_time = APP_GLANCE_SLICE_NO_EXPIRATION,
-  };
-  app_glance_add_slice(session, slice);
-}
-
 static void deinit(void) {
   app_glance_reload(glance_reload, NULL);
-  if (s_action_window) {
-    window_destroy(s_action_window);
-  }
-  if (s_qr_window) {
-    window_destroy(s_qr_window);
-  }
-  if (s_signin_window) {
-    window_destroy(s_signin_window);
-  }
+  if (s_detail_window) window_destroy(s_detail_window);
+  if (s_repo_window) window_destroy(s_repo_window);
+  if (s_qr_window) window_destroy(s_qr_window);
+  if (s_signin_window) window_destroy(s_signin_window);
   window_destroy(s_main_window);
 }
 

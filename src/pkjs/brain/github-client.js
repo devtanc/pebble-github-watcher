@@ -83,6 +83,7 @@ function createGithubClient(deps) {
       var status = mapStatus(run);
       return {
         label: labelFor(target, run),
+        title: 'CI', // level-2 row title within a repo
         status: status,
         ageS: ageOf(run),
         url: (run && run.html_url) || ('https://github.com/' + target.owner + '/' + target.repo),
@@ -102,6 +103,7 @@ function createGithubClient(deps) {
       var pr = res.body || {};
       return {
         label: target.repo + '#' + target.pr,
+        title: '#' + target.pr + ' ' + (pr.title || ''), // level-2 row title
         status: mapPrStatus(pr),
         ageS: ageFromIso(pr.updated_at),
         url: pr.html_url || ('https://github.com/' + target.owner + '/' + target.repo + '/pull/' + target.pr),

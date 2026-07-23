@@ -9,3 +9,6 @@ void vm_format_age(uint32_t age_s, char *out, size_t out_len);
 
 // Short ASCII glyph for a BuildStatus value (safe on 1-bit displays).
 const char *vm_status_glyph(uint8_t status);
+
+// A human-readable word for a BuildStatus value (for the detail screen).
+const char *vm_status_word(uint8_t status);

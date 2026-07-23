@@ -14,6 +14,7 @@ var createTimeline = require('./brain/timeline').createTimeline;
 var timelinePlanner = require('./brain/timeline-planner');
 var qrEncoder = require('./brain/qr-encoder');
 var glance = require('./brain/glance');
+var group = require('./brain/group');
 var STATUS = require('./brain/protocol').STATUS;
 
 function nowMs() { return Date.now(); }
@@ -265,17 +266,27 @@ function planOne(token, target, item) {
 
 function sendBoard(items) {
   lastItems = items;
-  var count = items.length;
+  var repos = group.groupByRepo(items);
+  // Send every REPO group first, then all CHILD items (with their repo index
+  // and flat index), then the glance. Chained: one AppMessage at a time.
+  var msgs = [];
+  repos.forEach(function (r, repoIdx) {
+    msgs.push(codec.encodeBoardRepo({ repoIdx: repoIdx, count: repos.length, name: r.name, status: r.status }));
+  });
+  repos.forEach(function (r, repoIdx) {
+    r.children.forEach(function (c) {
+      msgs.push(codec.encodeBoardItem({
+        idx: c.flatIdx, repoIdx: repoIdx, label: c.title, status: c.status, ageS: c.ageS, action: c.action,
+      }));
+    });
+  });
   function next(i) {
-    if (i >= count) {
-      console.log('board sent: ' + count + ' items');
+    if (i >= msgs.length) {
+      console.log('board sent: ' + repos.length + ' repos, ' + items.length + ' items');
       send(codec.encodeGlance(glance.summarize(items)));
       return;
     }
-    var it = items[i];
-    send(codec.encodeBoardItem({
-      idx: i, count: count, label: it.label, status: it.status, ageS: it.ageS, action: it.action,
-    }), function () { next(i + 1); });
+    send(msgs[i], function () { next(i + 1); });
   }
   next(0);
 }

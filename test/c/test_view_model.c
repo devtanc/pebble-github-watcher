@@ -39,6 +39,13 @@ void test_status_glyphs(void) {
   TEST_ASSERT_EQUAL_STRING("?", vm_status_glyph(STATUS_UNKNOWN));
 }
 
+void test_status_words(void) {
+  TEST_ASSERT_EQUAL_STRING("Passed", vm_status_word(STATUS_SUCCESS));
+  TEST_ASSERT_EQUAL_STRING("Failing", vm_status_word(STATUS_FAILURE));
+  TEST_ASSERT_EQUAL_STRING("Running", vm_status_word(STATUS_IN_PROGRESS));
+  TEST_ASSERT_EQUAL_STRING("Unknown", vm_status_word(STATUS_UNKNOWN));
+}
+
 int main(void) {
   UNITY_BEGIN();
   RUN_TEST(test_age_seconds);
@@ -46,5 +53,6 @@ int main(void) {
   RUN_TEST(test_age_hours);
   RUN_TEST(test_age_days);
   RUN_TEST(test_status_glyphs);
+  RUN_TEST(test_status_words);
   return UNITY_END();
 }

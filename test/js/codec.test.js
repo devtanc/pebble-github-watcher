@@ -11,23 +11,26 @@ describe('codec', () => {
   });
 
   test('encodeBoardItem maps all fields onto message keys', () => {
-    const wire = codec.encodeBoardItem({
-      idx: 1, count: 3, label: 'api:main', status: STATUS.FAILURE, ageS: 120,
-    });
+    const wire = codec.encodeBoardItem({ idx: 1, repoIdx: 2, label: 'CI', status: STATUS.FAILURE, ageS: 120, action: 1 });
     expect(wire).toEqual({
       [KEY.MSG_TYPE]: MSG_TYPE.BOARD_ITEM,
       [KEY.IDX]: 1,
-      [KEY.COUNT]: 3,
-      [KEY.LABEL]: 'api:main',
+      [KEY.REPO_IDX]: 2,
+      [KEY.LABEL]: 'CI',
       [KEY.STATUS]: STATUS.FAILURE,
       [KEY.AGE_S]: 120,
-      [KEY.ACTION]: 0,
+      [KEY.ACTION]: 1,
     });
   });
 
   test('a board item round-trips through encode then decode', () => {
-    const item = { idx: 0, count: 2, label: 'web:dev', status: STATUS.SUCCESS, ageS: 45 };
-    expect(codec.decode(codec.encodeBoardItem(item))).toEqual({ type: 'BOARD_ITEM', ...item, action: 0 });
+    const item = { idx: 0, repoIdx: 1, label: '#7 fix', status: STATUS.SUCCESS, ageS: 45, action: 2 };
+    expect(codec.decode(codec.encodeBoardItem(item))).toEqual({ type: 'BOARD_ITEM', ...item });
+  });
+
+  test('a board repo round-trips', () => {
+    expect(codec.decode(codec.encodeBoardRepo({ repoIdx: 0, count: 2, name: 'o/r', status: STATUS.FAILURE })))
+      .toEqual({ type: 'BOARD_REPO', repoIdx: 0, count: 2, name: 'o/r', status: STATUS.FAILURE });
   });
 
   test('an unknown message type is surfaced, not thrown', () => {

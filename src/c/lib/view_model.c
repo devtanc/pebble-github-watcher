@@ -23,3 +23,13 @@ const char *vm_status_glyph(uint8_t status) {
     default:                 return "?";
   }
 }
+
+const char *vm_status_word(uint8_t status) {
+  switch (status) {
+    case STATUS_SUCCESS:     return "Passed";
+    case STATUS_FAILURE:     return "Failing";
+    case STATUS_IN_PROGRESS: return "Running";
+    case STATUS_STALE:       return "Stale";
+    default:                 return "Unknown";
+  }
+}
