@@ -12,40 +12,34 @@ function store(settings) {
 }
 const cs = (storage) => createConfigStore({ storage });
 
-describe('config-store targets', () => {
-  test('no config yields no targets (empty state)', () => {
-    expect(cs(store()).getTargets()).toEqual([]);
-    expect(cs(store({})).getTargets()).toEqual([]);
+describe('config-store watched repos', () => {
+  test('empty when unset', () => {
+    expect(cs(store()).getWatchedRepos()).toEqual([]);
+    expect(cs(store({})).getWatchedRepos()).toEqual([]);
   });
 
-  test('parses a single owner/repo:branch', () => {
-    expect(cs(store({ repos: 'devtanc/dynamo-helper:master' })).getTargets())
-      .toEqual([{ owner: 'devtanc', repo: 'dynamo-helper', branch: 'master' }]);
+  test('reads resolved savedRepos, dropping malformed entries', () => {
+    expect(cs(store({ savedRepos: [{ owner: 'o', repo: 'r1' }, { owner: 'o' }, { repo: 'x' }] })).getWatchedRepos())
+      .toEqual([{ owner: 'o', repo: 'r1' }]);
+  });
+});
+
+describe('config-store manual targets', () => {
+  test('empty when unset', () => {
+    expect(cs(store({})).getManualTargets()).toEqual([]);
   });
 
-  test('parses comma- and newline-separated repos, branch optional', () => {
-    expect(cs(store({ repos: 'a/b:main, c/d\n e/f:dev' })).getTargets()).toEqual([
+  test('parses owner/repo, :branch and #PR, comma/newline separated', () => {
+    expect(cs(store({ repos: 'a/b:main, c/d\n e/f#7' })).getManualTargets()).toEqual([
       { owner: 'a', repo: 'b', branch: 'main' },
       { owner: 'c', repo: 'd', branch: undefined },
-      { owner: 'e', repo: 'f', branch: 'dev' },
+      { owner: 'e', repo: 'f', pr: 7 },
     ]);
   });
 
   test('ignores malformed tokens', () => {
-    expect(cs(store({ repos: 'noslash, /nope, ok/repo, bad/' })).getTargets())
+    expect(cs(store({ repos: 'noslash, /nope, ok/repo, bad/' })).getManualTargets())
       .toEqual([{ owner: 'ok', repo: 'repo', branch: undefined }]);
-  });
-
-  test('parses a PR target (owner/repo#123)', () => {
-    expect(cs(store({ repos: 'devtanc/dynamo-helper#104' })).getTargets())
-      .toEqual([{ owner: 'devtanc', repo: 'dynamo-helper', pr: 104 }]);
-  });
-
-  test('mixes PR and branch targets', () => {
-    expect(cs(store({ repos: 'o/r:main, o/r#7' })).getTargets()).toEqual([
-      { owner: 'o', repo: 'r', branch: 'main' },
-      { owner: 'o', repo: 'r', pr: 7 },
-    ]);
   });
 });
 
@@ -68,5 +62,10 @@ describe('config-store other settings', () => {
   test('getUseTimeline defaults to true', () => {
     expect(cs(store({})).getUseTimeline()).toBe(true);
     expect(cs(store({ useTimeline: false })).getUseTimeline()).toBe(false);
+  });
+
+  test('getCatalogTtlMs defaults to 1 hour, honors the setting', () => {
+    expect(cs(store({})).getCatalogTtlMs()).toBe(3600000);
+    expect(cs(store({ catalogTtlHours: 4 })).getCatalogTtlMs()).toBe(4 * 3600000);
   });
 });

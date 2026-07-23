@@ -44,6 +44,7 @@ function parseRepos(text) {
     .filter(Boolean);
 }
 
+
 function createConfigStore(deps) {
   var storage = deps.storage;
 
@@ -53,8 +54,26 @@ function createConfigStore(deps) {
     try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
   }
 
-  function getTargets() {
+  // Repos chosen via the checkboxes (resolved at save time into { owner, repo }).
+  // Each is expanded at board load into its CI + live PR rows.
+  function getWatchedRepos() {
+    var arr = settings().savedRepos;
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter(function (r) { return r && r.owner && r.repo; })
+      .map(function (r) { return { owner: String(r.owner), repo: String(r.repo) }; });
+  }
+
+  // Explicit targets typed in the advanced field (owner/repo, :branch, #PR).
+  function getManualTargets() {
     return parseRepos(settings().repos);
+  }
+
+  // How stale the cached catalog may be before the config page refetches it.
+  function getCatalogTtlMs() {
+    var h = Number(settings().catalogTtlHours);
+    if (!h || h <= 0) h = 1; // default: hourly
+    return h * 3600 * 1000;
   }
 
   function getPat() {
@@ -78,7 +97,9 @@ function createConfigStore(deps) {
   }
 
   return {
-    getTargets: getTargets,
+    getWatchedRepos: getWatchedRepos,
+    getManualTargets: getManualTargets,
+    getCatalogTtlMs: getCatalogTtlMs,
     getPat: getPat,
     getClientIdOverride: getClientIdOverride,
     getPollMinutes: getPollMinutes,

@@ -1,7 +1,8 @@
 // Phone-side entry point. Milestone 5: Clay config page drives everything —
 // watched repos, auth, options — with no hardcoded config.
 var Clay = require('@rebble/clay');
-var clayConfig = require('./config-page');
+var configPage = require('./config-page');
+var createCatalog = require('./brain/catalog').createCatalog;
 var codec = require('./brain/codec');
 var config = require('./config');
 var http = require('./brain/http');
@@ -44,16 +45,60 @@ var timeline = createTimeline({
   httpPut: http.httpPut,
 });
 
-// Manual event handling so config stays phone-side (not pushed to the watch).
-var clay = new Clay(clayConfig, null, { autoHandleEvents: false });
+var catalog = createCatalog({ github: github, storage: localStorage, now: nowMs });
+
+function readClaySettings() {
+  try { return JSON.parse(localStorage.getItem('clay-settings')) || {}; } catch (e) { return {}; }
+}
+function writeClaySettings(s) {
+  localStorage.setItem('clay-settings', JSON.stringify(s));
+}
+
+// Config page is built per-open from the cached catalog; kept phone-side (not
+// pushed to the watch), so autoHandleEvents is off and we drive events manually.
+var clay = null;
+var lastCatalog = { repos: [] };
+
+function openConfig(catalogData) {
+  lastCatalog = catalogData || { repos: [] };
+  var savedRepos = readClaySettings().savedRepos || [];
+  clay = new Clay(configPage.build(lastCatalog, savedRepos), null, { autoHandleEvents: false });
+  Pebble.openURL(clay.generateUrl());
+}
 
 Pebble.addEventListener('showConfiguration', function () {
-  Pebble.openURL(clay.generateUrl());
+  auth.getAccessToken().then(function (token) {
+    return catalog.get(token, configStore.getCatalogTtlMs(), false);
+  }).then(function (cat) {
+    openConfig(cat);
+  }).catch(function (err) {
+    // No token / fetch failed: still open with an empty list so manual entry + PAT work.
+    console.log('config catalog error: ' + (err && (err.code || err.message)));
+    openConfig({ repos: [] });
+  });
 });
 
+// Resolve the checkboxgroup's boolean array back to the repo objects it stands for.
+function resolveChecked(bools, repos) {
+  var out = [];
+  if (Array.isArray(bools)) {
+    for (var i = 0; i < repos.length; i++) {
+      if (bools[i]) out.push(repos[i]);
+    }
+  }
+  return out;
+}
+
 Pebble.addEventListener('webviewclosed', function (e) {
-  if (!e || !e.response) return;
-  clay.getSettings(e.response); // persists to localStorage['clay-settings']
+  if (!e || !e.response || !clay) return;
+  clay.getSettings(e.response); // persists flattened settings to clay-settings
+  var s = readClaySettings();
+  s.savedRepos = resolveChecked(s.selRepos, configPage.repoList(lastCatalog));
+  if (s.refreshCatalog) {
+    catalog.invalidate(); // force a refetch on next open
+    s.refreshCatalog = false;
+  }
+  writeClaySettings(s);
   loadBoard();
 });
 
@@ -124,21 +169,41 @@ function sendQr(idx) {
   send(codec.encodeQrData(qr));
 }
 
+var MAX_BOARD = 16; // matches MAX_ITEMS on the watch
+
+// Expand a watched repo into targets: its CI (default branch) + a row per open PR.
+function expandRepo(token, r) {
+  return github.listOpenPrs(token, r.owner, r.repo).then(function (prs) {
+    var targets = [{ owner: r.owner, repo: r.repo }];
+    prs.forEach(function (p) { targets.push({ owner: r.owner, repo: r.repo, pr: p.number }); });
+    return targets;
+  }).catch(function () {
+    return [{ owner: r.owner, repo: r.repo }]; // at least CI if the PR fetch fails
+  });
+}
+
 function loadBoard() {
-  var targets = configStore.getTargets();
-  if (targets.length === 0) {
+  var repos = configStore.getWatchedRepos();
+  var manual = configStore.getManualTargets();
+  if (repos.length === 0 && manual.length === 0) {
     send(codec.encodeStatus('No repos yet.\nAdd them in the\nPebble phone app.'),
       function () { send(codec.encodeGlance(glance.summarize([]))); });
     return;
   }
   var tok;
+  var allTargets;
   auth.getAccessToken().then(function (token) {
     tok = token;
-    return github.fetchBoard(token, targets);
+    return Promise.all(repos.map(function (r) { return expandRepo(token, r); }));
+  }).then(function (lists) {
+    allTargets = manual.slice();
+    lists.forEach(function (l) { allTargets = allTargets.concat(l); });
+    if (allTargets.length > MAX_BOARD) allTargets = allTargets.slice(0, MAX_BOARD);
+    return github.fetchBoard(tok, allTargets);
   }).then(function (items) {
-    console.log('board: ' + items.length + ' targets, rate remaining: ' + governor.getRemaining());
+    console.log('board: ' + items.length + ' items, rate remaining: ' + governor.getRemaining());
     sendBoard(items);
-    planAlerts(tok, targets, items);
+    planAlerts(tok, allTargets, items);
   }).catch(function (err) {
     if (err && err.code === 'auth_required') {
       auth.signOut();

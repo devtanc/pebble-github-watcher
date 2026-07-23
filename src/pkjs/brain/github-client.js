@@ -161,6 +161,38 @@ function createGithubClient(deps) {
     });
   }
 
+  // ---- Catalog listing (for the config page's checkbox lists) ----------------
+
+  function listRepos(token) {
+    return httpGetJson(API + '/user/repos?per_page=100&sort=full_name', headersFor(token)).then(function (res) {
+      if (res.status === 401) throw authErr();
+      var arr = Array.isArray(res.body) ? res.body : [];
+      return arr.map(function (r) {
+        return { owner: r.owner && r.owner.login, repo: r.name };
+      }).filter(function (r) { return r.owner && r.repo; });
+    });
+  }
+
+  function listWorkflows(token, owner, repo) {
+    var url = API + '/repos/' + owner + '/' + repo + '/actions/workflows?per_page=100';
+    return httpGetJson(url, headersFor(token)).then(function (res) {
+      if (res.status === 401) throw authErr();
+      var wfs = (res.body && res.body.workflows) || [];
+      return wfs.map(function (w) {
+        return { name: w.name, file: w.path ? w.path.split('/').pop() : String(w.id) };
+      });
+    });
+  }
+
+  function listOpenPrs(token, owner, repo) {
+    var url = API + '/repos/' + owner + '/' + repo + '/pulls?state=open&per_page=50';
+    return httpGetJson(url, headersFor(token)).then(function (res) {
+      if (res.status === 401) throw authErr();
+      var arr = Array.isArray(res.body) ? res.body : [];
+      return arr.map(function (p) { return { number: p.number, title: p.title }; });
+    });
+  }
+
   // PUT merge. Resolves { ok, msg }; rejects auth_required on 401.
   function mergePr(token, owner, repo, pr) {
     var url = API + '/repos/' + owner + '/' + repo + '/pulls/' + pr + '/merge';
@@ -177,6 +209,9 @@ function createGithubClient(deps) {
     fetchRunTimings: fetchRunTimings,
     rerunFailedJobs: rerunFailedJobs,
     mergePr: mergePr,
+    listRepos: listRepos,
+    listWorkflows: listWorkflows,
+    listOpenPrs: listOpenPrs,
   };
 }
 

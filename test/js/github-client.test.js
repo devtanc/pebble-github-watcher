@@ -92,6 +92,38 @@ describe('github-client mergePr', () => {
   });
 });
 
+describe('github-client catalog listing', () => {
+  test('listRepos maps and filters repos', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: [
+      { name: 'a', owner: { login: 'o' } },
+      { name: 'b', owner: { login: 'o2' } },
+      { name: 'bad' }, // no owner -> dropped
+    ] });
+    const repos = await client(http).listRepos('T');
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/user/repos?per_page=100&sort=full_name');
+    expect(repos).toEqual([{ owner: 'o', repo: 'a' }, { owner: 'o2', repo: 'b' }]);
+  });
+
+  test('listWorkflows maps name + file', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: { workflows: [
+      { name: 'CI', path: '.github/workflows/ci.yml', id: 1 },
+      { name: 'Deploy', path: '.github/workflows/deploy.yml', id: 2 },
+    ] } });
+    const wfs = await client(http).listWorkflows('T', 'o', 'r');
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/actions/workflows?per_page=100');
+    expect(wfs).toEqual([{ name: 'CI', file: 'ci.yml' }, { name: 'Deploy', file: 'deploy.yml' }]);
+  });
+
+  test('listOpenPrs maps number + title', async () => {
+    const http = jest.fn().mockResolvedValue({ status: 200, body: [
+      { number: 7, title: 'Fix bug' }, { number: 9, title: 'Add feature' },
+    ] });
+    const prs = await client(http).listOpenPrs('T', 'o', 'r');
+    expect(http.mock.calls[0][0]).toBe('https://api.github.com/repos/o/r/pulls?state=open&per_page=50');
+    expect(prs).toEqual([{ number: 7, title: 'Fix bug' }, { number: 9, title: 'Add feature' }]);
+  });
+});
+
 describe('github-client fetchRunTimings', () => {
   test('splits in-progress from completed runs', async () => {
     const http = jest.fn().mockResolvedValue({ status: 200, body: { workflow_runs: [
