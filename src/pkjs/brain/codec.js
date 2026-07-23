@@ -78,8 +78,8 @@ function encodeActionMerge(idx) {
   return { [KEY.MSG_TYPE]: MSG_TYPE.ACTION_MERGE, [KEY.IDX]: idx };
 }
 
-function encodeQrData(qr) {
-  return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
+function encodeQrData(idx, qr) {
+  return { [KEY.MSG_TYPE]: MSG_TYPE.QR_DATA, [KEY.IDX]: idx, [KEY.SIZE]: qr.size, [KEY.DATA]: qr.bytes };
 }
 
 // Decode an incoming payload (from either side) into a logical message.
@@ -126,7 +126,7 @@ function decode(payload) {
     case MSG_TYPE.REQUEST_QR:
       return { type: 'REQUEST_QR', idx: payload[KEY.IDX] };
     case MSG_TYPE.QR_DATA:
-      return { type: 'QR_DATA', size: payload[KEY.SIZE], data: payload[KEY.DATA] };
+      return { type: 'QR_DATA', idx: payload[KEY.IDX], size: payload[KEY.SIZE], data: payload[KEY.DATA] };
     case MSG_TYPE.GLANCE:
       return { type: 'GLANCE', msg: payload[KEY.MSG] };
     case MSG_TYPE.ACTION_RERUN:

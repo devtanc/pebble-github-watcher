@@ -75,9 +75,9 @@ describe('codec', () => {
     expect(codec.decode(codec.encodeRequestQr(2))).toEqual({ type: 'REQUEST_QR', idx: 2 });
   });
 
-  test('qr-data round-trips', () => {
-    expect(codec.decode(codec.encodeQrData({ size: 29, bytes: [1, 2, 3] })))
-      .toEqual({ type: 'QR_DATA', size: 29, data: [1, 2, 3] });
+  test('qr-data round-trips with its item index', () => {
+    expect(codec.decode(codec.encodeQrData(5, { size: 29, bytes: [1, 2, 3] })))
+      .toEqual({ type: 'QR_DATA', idx: 5, size: 29, data: [1, 2, 3] });
   });
 
   test('glance round-trips', () => {

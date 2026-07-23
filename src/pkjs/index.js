@@ -132,10 +132,18 @@ Pebble.addEventListener('appmessage', function (e) {
   var msg = codec.decode(e.payload);
   console.log('rx: ' + msg.type);
   if (msg.type === 'REQUEST_BOARD') loadBoard();
-  else if (msg.type === 'REQUEST_QR') sendQr(msg.idx);
   else if (msg.type === 'ACTION_RERUN') doRerun(msg.idx);
   else if (msg.type === 'ACTION_MERGE') doMerge(msg.idx);
 });
+
+// Pre-send a QR for every item after the board renders, so long-press is instant
+// (no flaky watch->phone round-trip). Runs in the background.
+function sendQrs(items, i) {
+  if (i >= items.length) { console.log('qrs sent: ' + items.length); return; }
+  var it = items[i];
+  if (!it.url) { sendQrs(items, i + 1); return; }
+  send(codec.encodeQrData(i, qrEncoder.encode(it.url)), function () { sendQrs(items, i + 1); });
+}
 
 function doMerge(idx) {
   var item = lastItems[idx];
@@ -169,14 +177,6 @@ function doRerun(idx) {
   }).catch(function (err) {
     send(codec.encodeActionResult(false, (err && (err.code || err.message)) || 'failed'));
   });
-}
-
-function sendQr(idx) {
-  var item = lastItems[idx];
-  if (!item || !item.url) { console.log('no url for idx ' + idx); return; }
-  var qr = qrEncoder.encode(item.url);
-  console.log('qr idx ' + idx + ' size=' + qr.size + ' bytes=' + qr.bytes.length + ' url=' + item.url);
-  send(codec.encodeQrData(qr));
 }
 
 var MAX_BOARD = 16; // matches MAX_ITEMS on the watch
@@ -284,7 +284,7 @@ function sendBoard(items) {
   function next(i) {
     if (i >= msgs.length) {
       console.log('board sent: ' + repos.length + ' repos, ' + items.length + ' items');
-      send(codec.encodeGlance(glance.summarize(items)));
+      send(codec.encodeGlance(glance.summarize(items)), function () { sendQrs(items, 0); });
       return;
     }
     send(msgs[i], function () { next(i + 1); });

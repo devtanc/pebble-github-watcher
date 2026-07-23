@@ -62,12 +62,15 @@ static int s_signin_qr_size = 0;
 static char s_user_code[16] = "";
 static char s_instr_text[64] = "github.com/login/device";
 
-// QR window
+// QR window. QRs are pushed proactively by the phone with the board (one per
+// item, keyed by flat index), so long-press shows a cached QR instantly — no
+// watch->phone round-trip.
+#define MAX_QR_BYTES 256
 static Window *s_qr_window = NULL;
 static Layer *s_qr_layer;
-static uint8_t s_qr_bytes[512];
-static int s_qr_size = 0;
-static bool s_qr_pending = false; // awaiting a QR the user just requested
+static uint8_t s_qr_cache[MAX_BOARD][MAX_QR_BYTES];
+static uint16_t s_qr_cache_size[MAX_BOARD]; // 0 = not cached yet
+static int s_qr_current = -1;               // which cached QR the window shows
 
 // ---- QR drawing (shared by the board QR window and the sign-in QR) ----------
 
@@ -153,7 +156,8 @@ static void hide_signin(void) {
 // ---- QR window --------------------------------------------------------------
 
 static void qr_update_proc(Layer *layer, GContext *ctx) {
-  draw_qr(ctx, layer_get_bounds(layer), s_qr_bytes, s_qr_size);
+  if (s_qr_current < 0 || s_qr_cache_size[s_qr_current] == 0) return;
+  draw_qr(ctx, layer_get_bounds(layer), s_qr_cache[s_qr_current], s_qr_cache_size[s_qr_current]);
 }
 
 static void qr_window_load(Window *window) {
@@ -183,15 +187,6 @@ static void show_qr(void) {
 }
 
 // ---- Outbound (watch -> phone) ----------------------------------------------
-
-static void send_request_qr(int flat_idx) {
-  DictionaryIterator *out;
-  if (app_message_outbox_begin(&out) != APP_MSG_OK) return;
-  int type = MSG_TYPE_REQUEST_QR;
-  dict_write_int(out, MESSAGE_KEY_MsgType, &type, sizeof(int), true);
-  dict_write_int(out, MESSAGE_KEY_Idx, &flat_idx, sizeof(int), true);
-  app_message_outbox_send();
-}
 
 static void send_action(int flat_idx, int kind) {
   DictionaryIterator *out;
@@ -347,7 +342,6 @@ static void repo_menu_draw_row(GContext *ctx, const Layer *cell, MenuIndex *cell
 
 static void repo_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *context) {
   if (cell_index->row < s_repos[s_sel_repo].child_count) {
-    s_qr_pending = false; // moving on; drop any outstanding QR request
     show_detail(s_sel_repo, cell_index->row);
   }
 }
@@ -355,8 +349,13 @@ static void repo_menu_select(MenuLayer *menu, MenuIndex *cell_index, void *conte
 static void repo_menu_select_long(MenuLayer *menu, MenuIndex *cell_index, void *context) {
   Repo *repo = &s_repos[s_sel_repo];
   if (cell_index->row < repo->child_count) {
-    s_qr_pending = true;
-    send_request_qr(s_children[repo->child_start + cell_index->row].flat_idx);
+    int fi = s_children[repo->child_start + cell_index->row].flat_idx;
+    if (fi >= 0 && fi < MAX_BOARD && s_qr_cache_size[fi] > 0) {
+      s_qr_current = fi;
+      show_qr();
+    } else {
+      vibes_short_pulse(); // QR not cached yet — the phone is still sending
+    }
   }
 }
 
@@ -378,7 +377,6 @@ static void repo_window_load(Window *window) {
 static void repo_window_unload(Window *window) {
   menu_layer_destroy(s_repo_menu);
   s_repo_menu = NULL;
-  s_qr_pending = false; // left the list; ignore a late QR response
 }
 
 static void show_repo(int repo_idx) {
@@ -532,17 +530,19 @@ static void handle_auth_error(DictionaryIterator *iter) {
   show_signin();
 }
 
+// The phone pushes a QR per item after the board; cache it by flat index so a
+// later long-press can show it instantly.
 static void handle_qr_data(DictionaryIterator *iter) {
-  if (!s_qr_pending) return; // stale/late response (emulator watch->phone delay) — ignore
-  s_qr_pending = false;
+  Tuple *idx_t = dict_find(iter, MESSAGE_KEY_Idx);
   Tuple *size_tuple = dict_find(iter, MESSAGE_KEY_Size);
   Tuple *data_tuple = dict_find(iter, MESSAGE_KEY_Data);
-  if (!size_tuple || !data_tuple) return;
+  if (!idx_t || !size_tuple || !data_tuple) return;
+  int fi = idx_t->value->int32;
+  if (fi < 0 || fi >= MAX_BOARD) return;
   uint16_t len = data_tuple->length;
-  if (len > sizeof(s_qr_bytes)) len = sizeof(s_qr_bytes);
-  memcpy(s_qr_bytes, data_tuple->value->data, len);
-  s_qr_size = size_tuple->value->int32;
-  show_qr();
+  if (len > MAX_QR_BYTES) len = MAX_QR_BYTES;
+  memcpy(s_qr_cache[fi], data_tuple->value->data, len);
+  s_qr_cache_size[fi] = (uint16_t) size_tuple->value->int32;
 }
 
 static void handle_glance(DictionaryIterator *iter) {
